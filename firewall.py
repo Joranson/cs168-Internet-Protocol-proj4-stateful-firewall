@@ -21,13 +21,16 @@ class Firewall:
         self.rules = []
         with open(config['rule']) as f:
             self.rules = f.readlines()
-        self.rules = [rule.rstrip().split(" ") for rule in self.rules if rule[0\
-]=='p' or rule[0]=='d']
-        
+        self.rules = [rule.rstrip().split() for rule in self.rules if rule[0:4]=='pass' or rule[0:4]=='drop']
+        self.dnsRules = [elem for elem in self.rules if elem[1]=="dns" and ("*" not in elem[2] or ("*" in elem[2] and elem[2][0]=="*"))]
+
         if self.debug:
             for i in self.rules:
                 print i
                 print "Initialization finished"
+            for j in self.dnsRules:
+                print "dnsRule:", j
+
                 
 
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
@@ -104,5 +107,9 @@ class Firewall:
             addr = addr >> 4
         return list(reversed(dot_quad))
 
+    # def dnsMatching(self, addr):
+    #     if
 # TODO: You may want to add more classes/functions as well.
+
+    # TODO: multiple rules are matched, use the last one
 
