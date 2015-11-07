@@ -14,27 +14,22 @@ class Firewall:
         self.iface_ext = iface_ext
 
         self.debug = True
-
         # TODO: Load the GeoIP DB ('geoipdb.txt') as well.
         # TODO: Also do some initialization if needed.
 
         self.rules = []
         with open(config['rule']) as f:
             self.rules = f.readlines()
-        self.rules = [rule.rstrip().split(" ") for rule in self.rules if rule[0\
-]=='p' or rule[0]=='d']
-
+        self.rules = [rule.rstrip().split(" ") for rule in self.rules if rule[0]=='p' or rule[0]=='d']
         if self.debug:
             for i in self.rules:
                 print i
                 print "Initialization finished"
 
-
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
-
         # Parse the pkt
         pkt_info = {'ip_protocal':'', 'external_ip':'', 'external_port':''}
         pkt_info['ip_protocal'] = struct.unpack('!B', pkt[9])[0]
@@ -71,11 +66,12 @@ class Firewall:
                     print "outgoing packet"
                 pkt_info['external_port'] = dest_port
                 pkt_info['external_addr'] = dest_addr
-
         elif pkt_info['ip_protocal'] == 17:
             if self.debug:
                 print "UDP"
-
+        elif pkt_info['ip_protocal'] == 17:
+            if self.debug:
+                print "UDP"
         elif pkt_info['ip_protocal'] == 1:
             if self.debug:
                 print "ICMP"
@@ -86,7 +82,6 @@ class Firewall:
 
         print "-----------finished parsing-----------"
 
-
         # The handler currently passes every packet regardless of rules.
         allowed = True
         if allowed:
@@ -96,6 +91,13 @@ class Firewall:
                 self.iface_ext.send_ip_packet(pkt)
 
     # TODO: You can add more methods as you want.
+    
+    def intToDotQuad(self, addr):
+        dot_quad = []
+        for i in range(4):
+            dot_quad.append(addr & 15)
+            addr = addr >> 4
+        return list(reversed(dot_quad))
 
     def intToDotQuad(self, addr):
         dot_quad = []
