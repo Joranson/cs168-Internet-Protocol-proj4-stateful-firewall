@@ -20,7 +20,7 @@ class Firewall:
         self.rules = []
         with open(config['rule']) as f:
             self.rules = f.readlines()
-        self.rules = [rule.rstrip().split(" ") for rule in self.rules if rule[0]=='p' or rule[0]=='d']
+        self.rules = [rule.rstrip().split() for rule in self.rules if rule[0]=='p' or rule[0]=='d']
         if self.debug:
             for i in self.rules:
                 print i
