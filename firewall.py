@@ -14,7 +14,6 @@ class Firewall:
         self.iface_ext = iface_ext
 
         self.debug = True
-       
         # TODO: Load the GeoIP DB ('geoipdb.txt') as well.
         # TODO: Also do some initialization if needed.
 
@@ -23,7 +22,6 @@ class Firewall:
             self.rules = f.readlines()
         self.rules = [rule.rstrip().split() for rule in self.rules if rule[0:4]=='pass' or rule[0:4]=='drop']
         self.dnsRules = [elem for elem in self.rules if elem[1]=="dns" and ("*" not in elem[2] or ("*" in elem[2] and elem[2][0]=="*"))]
-
         if self.debug:
             for i in self.rules:
                 print i
@@ -31,13 +29,10 @@ class Firewall:
             for j in self.dnsRules:
                 print "dnsRule:", j
 
-                
-
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
-        
         # Parse the pkt
         pkt_info = {'ip_protocal':'', 'external_ip':'', 'external_port':''}
         pkt_info['ip_protocal'] = struct.unpack('!B', pkt[9])[0]
@@ -74,11 +69,12 @@ class Firewall:
                     print "outgoing packet"
                 pkt_info['external_port'] = dest_port
                 pkt_info['external_addr'] = dest_addr
-           
         elif pkt_info['ip_protocal'] == 17:
             if self.debug:
                 print "UDP"
-                
+        elif pkt_info['ip_protocal'] == 17:
+            if self.debug:
+                print "UDP"
         elif pkt_info['ip_protocal'] == 1:
             if self.debug:
                 print "ICMP"
@@ -88,7 +84,6 @@ class Firewall:
 
 
         print "-----------finished parsing-----------"
-        
 
         # The handler currently passes every packet regardless of rules.
         allowed = True
@@ -109,6 +104,13 @@ class Firewall:
 
     # def dnsMatching(self, addr):
     #     if
+    def intToDotQuad(self, addr):
+        dot_quad = []
+        for i in range(4):
+            dot_quad.append(addr & 15)
+            addr = addr >> 4
+        return list(reversed(dot_quad))
+
 # TODO: You may want to add more classes/functions as well.
 
     # TODO: multiple rules are matched, use the last one
