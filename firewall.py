@@ -245,13 +245,13 @@ class Firewall:
                 if (hex>=65 and hex<=90) or (hex>=97 and hex<=122) or hex==45:  # only alphabetic letters and hyphen are permitted as dns name
                     dnsName = dnsName+chr(hex)
                 elif dnsName!="": # beginning of parsing, first hex number not letters/hyphens is just number of letters behind
-                        dnsName = dnsName+"."       # adding dot
+                    dnsName = dnsName+"."       # adding dot
                 j+=1
         dnsName = dnsName.lower()
         QTYPE = struct.unpack("!H", pkt[j:j+2])[0]
         QCLASS = struct.unpack("!H", pkt[j+2:j+4])
         if (QTYPE==1 or QTYPE==28) and QCLASS==1 and QDCOUNT==1:
-            return True
+            return [True, dnsName]
         return [False, dnsName]
 
 
