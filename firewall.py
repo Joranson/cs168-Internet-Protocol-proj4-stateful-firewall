@@ -15,6 +15,8 @@ class Firewall:
         self.iface_ext = iface_ext
 
         self.debug = True
+
+        self.ipv4ProHash = {1:'icmp', 6:'tcp', 17:'udp'}
         
         self.rules = []
         with open(config['rule']) as f:
@@ -37,9 +39,6 @@ class Firewall:
         with open('geoipdb.txt') as f:
             self.geoDb = f.readlines()
         self.geoDb = [(entry.rstrip()).split(' ') for entry in self.geoDb]
-        self.geoHash = {}
-        for entry in self.geoDb:
-            self.geoHash[self.geoDb[2]] = [self.geoDb[0], self.geoDb[1]]
 
 
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
@@ -58,12 +57,13 @@ class Firewall:
         if self.debug:
             print "header version is", ip_version, "and header length is", ip_header_len
             print "the total length of packet is ", struct.unpack('!H', pkt[2:4])
+        
+        source_addr = self.intToDotQuad(struct.unpack('!L', pkt[12:16])[0])
+        dest_addr = self.intToDotQuad(struct.unpack('!L', pkt[16:20])[0])
 
         if pkt_info['ip_protocal'] == 6 or pkt_info['ip_protocal']==17:
 
-            source_addr = self.intToDotQuad(struct.unpack('!L', pkt[12:16])[0])
-            dest_addr = self.intToDotQuad(struct.unpack('!L', pkt[16:20])[0])
-
+           
             source_port = struct.unpack('!H', pkt[ip_header_len:ip_header_len + 2])[0]
             dest_port = struct.unpack('!H', pkt[ip_header_len + 2:ip_header_len + 4])[0]
 
@@ -79,56 +79,83 @@ class Firewall:
                     if self.debug:
                         print "incoming packet"
                     pkt_info['external_port'] = source_port
-                    pkt_info['external_addr'] = source_addr
+                    pkt_info['external_ip'] = source_addr
                     matchRes = self.proIpPortMatching(pkt_info)
+                    if self.debug:
+                        print "+++++++++++++++++++incoming packet rule matching result says,", matchRes
                     if matchRes == "pass":
                         self.iface_int.send_ip_packet(pkt)
                 else:
                     if self.debug:
                         print "outgoing packet"
                     pkt_info['external_port'] = dest_port
-                    pkt_info['external_addr'] = dest_addr
+                    pkt_info['external_ip'] = dest_addr
                     matchRes = self.proIpPortMatching(pkt_info)
+                    if self.debug:
+                        print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
                     if matchRes == "pass":
                         self.iface_ext.send_ip_packet(pkt)
             else:
-                if pkt_dir==PKT_DIR_OUTGOING and dest_port==53:     # treat only the udp portion of the pkt as the argument
-#                    dnsQueryBool, dnsName = self.checkDnsQuery(pkt[ip_header_len:])
-                    dnsQueryBool = False
-                    if not dnsQueryBool:
-                        if self.debug:
-                            print "Normal UDP with port=53 and OUTGOING"
-                    else:
-                        if self.debug:
-                            print "DNS query packet"
-                        ## do something here
-                        dns_matching_result = self.dnsMatching(dnsName)
-                        if dns_matching_result=="pass":     ##TODO: check if it's the last rule
-                            pass
-                        elif dns_matching_result=="drop":
-                            pass
-                        else:
-                            pass
+                if pkt_dir == PKT_DIR_OUTGOING:
+                    self.iface_ext.send_ip_packet(pkt)
                 else:
-                    if self.debug:
-                        print "Normal UDP"
+                    self.iface_int.send_ip_packet(pkt)
+               # if pkt_dir==PKT_DIR_OUTGOING and dest_port==53:     # treat only the udp portion of the pkt as the argument
+#                    dnsQueryBool, dnsName = self.checkDnsQuery(pkt[ip_header_len:])
+                    #dnsQueryBool = False
+                    #if not dnsQueryBool:
+                    #    if self.debug:
+                    #        print "Normal UDP with port=53 and OUTGOING"
+                    #    self.iface_int.send_ip_packet(pkt)
+                    #else:
+                    #    if self.debug:
+                    #        print "DNS query packet"
+                    #    ## do something here
+                    #    dns_matching_result = self.dnsMatching(dnsName)
+                    #    if dns_matching_result=="pass":     ##TODO: check if it's the last rule
+                    #        pass
+                    #    elif dns_matching_result=="drop":
+                    #        pass
+                    #    else:
+                    #        pass
+                #else:
+                #    if self.debug:
+                #        print "Normal UDP"
+                #    if pkt_dir -- PKT_DIR_OUTGOING:
+                #        self.iface_int.send_ip_packet(pkt)
+                #    else:
+                #        self.iface_ext.send_ip_packet(pkt)
         elif pkt_info['ip_protocal'] == 1:
             if self.debug:
                 print "ICMP"
+            icmp_type = struct.unpack('!B', pkt[ip_header_len])[0]
+            print "icmp_type is", icmp_type
+            pkt_info['external_port'] = icmp_type
+            if pkt_dir == PKT_DIR_INCOMING:
+                if self.debug:
+                    print "incoming packet"
+                pkt_info['external_ip'] = source_addr
+                matchRes = self.proIpPortMatching(pkt_info)
+                if self.debug:
+                    print "+++++++++++++++++++incoming packet rule matching result says,", matchRes
+                if matchRes == "pass":
+                    self.iface_int.send_ip_packet(pkt)
+            else:
+                if self.debug:
+                    print "outgoing packet"
+                pkt_info['external_ip'] = dest_addr
+                matchRes = self.proIpPortMatching(pkt_info)
+                if self.debug:
+                    print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
+                if matchRes == "pass":
+                    self.iface_ext.send_ip_packet(pkt)
         else:
             if self.debug:
                 print "The potocal is", pkt_info['ip_protocal']
-
-
-        print "-----------finished parsing-----------"
-
-        # The handler currently passes every packet regardless of rules.
-        allowed = True
-        if allowed:
-            if pkt_dir == PKT_DIR_INCOMING:
-                self.iface_int.send_ip_packet(pkt)
-            else:
+            if pkt_dir == PKT_DIR_OUTGOING:
                 self.iface_ext.send_ip_packet(pkt)
+            else:
+                self.iface_int.send_ip_packet(pkt)
 
     def intToDotQuad(self, addr):
         dot_quad = []
@@ -140,21 +167,52 @@ class Firewall:
     def dotQuadToInt(self, quad):
         num = 0
         for i in quad:
-            num += i
+            num += int(i)
             num = num << 8
         num = num >> 8
         return num
 
+    def isInCountry(self, ip, ctry):
+        res = self.findCtry(ip, 0, len(self.geoDb)-1)
+        if self.debug:
+            print "country found:", res
+        if res.lower() == ctry:
+            return True
+        return False
+
+    def findCtry(self, ip, start, end):
+        if self.debug:
+            print "start:", start, "and end:", end
+        if start == end:
+            mid = self.geoDb[start]
+            lower, upper = mid[0].split('.'), mid[1].split('.')
+            ipIntVal = self.dotQuadToInt(ip)
+            if ipIntVal >= self.dotQuadToInt(lower) and ipIntVal <= self.dotQuadToInt(upper):
+                return mid[2]
+            return None
+        mid = self.geoDb[(start+end)/2]
+        lower, upper = mid[0].split('.'), mid[1].split('.')
+        ipIntVal = self.dotQuadToInt(ip)
+        if ipIntVal < self.dotQuadToInt(lower):
+            return self.findCtry(ip, start, (start+end)/2-1)
+        elif ipIntVal > self.dotQuadToInt(upper):
+            if self.debug:
+                print "ipIntVal is greater than upper:", start, "and", end
+            return self.findCtry(ip, (start+end)/2+1, end)
+        return mid[2]
+
+
     def proIpPortMatching(self, pkt_info):
+        print "entered proTpPortMatching"
+        print pkt_info
         for rule in reversed(self.rules):
-            if pkt_info['ip_protocal'] == rule[1]:
+            print "rule is", rule
+            if self.ipv4ProHash[pkt_info['ip_protocal']] == rule[1]:
+                print "pkt's ipv4 protocal:", rule[1]
                 if len(rule[2]) == 2:
                     # country code
-                    lower, upper = self.geoHash(rule[2])
-                    lowerBound = self.dotQuadToInt(lower)
-                    upperBound = self.dotQuadToInt(upper)
-                    ip_int_val = self.dotQaudToInt(pkt_info['external_addr'])
-                    if ip_int_val <= upperBound and ip_int_val >= lowerBound:
+                    print "isInCountry:", self.isInCountry(pkt_info['external_ip'], rule[2])
+                    if self.isInCountry(pkt_info['external_ip'], rule[2]):
                         if rule[3] == 'any':
                             return rule[0]
                         elif '-' in rule[3]:
@@ -162,11 +220,12 @@ class Firewall:
                             lower, upper = int(lower), int(upper)
                             if pkt_info['external_port'] <= upper and pkt_info['external_port'] >= lower:
                                 return rule[0]
-                            else:
-                                if pkt_info['external_port'] == int(rule[3]):
-                                    return rule[0]
+                        else:
+                            if pkt_info['external_port'] == int(rule[3]):
+                                return rule[0]
                     
                 elif rule[2]  == 'any':
+                    print "rule says that external ip can be anything"
                     if rule[3] == 'any':
                         return rule[0]
                     elif '-' in rule[3]:
@@ -174,9 +233,10 @@ class Firewall:
                         lower, upper = int(lower), int(upper)
                         if pkt_info['external_port'] <= upper and pkt_info['external_port'] >= lower:
                             return rule[0]
-                        else:
-                            if pkt_info['external_port'] == int(rule[3]):
-                                return rule[0]
+                    else:
+                        print "rule says that external port should be", rule[3]
+                        if pkt_info['external_port'] == int(rule[3]):
+                            return rule[0]
                 else:
                     quad = rule[2].split('.')
                     if '/' in quad[3]:
