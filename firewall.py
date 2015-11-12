@@ -203,6 +203,11 @@ class Firewall:
         return num
 
     def isInCountry(self, ip, ctry):
+        if len(self.geoDb) == 0:
+            return None
+        for i in ip:
+            if i < 0 or i > 255:
+                return None
         res = self.findCtry(ip, 0, len(self.geoDb)-1)
         if self.debug:
             print "country found:", res
