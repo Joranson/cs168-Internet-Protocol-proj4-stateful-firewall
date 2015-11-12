@@ -76,7 +76,7 @@ class Firewall:
 
             if pkt_info['ip_protocal'] == 6:
                 if self.debug:
-                    print "TCP"
+                    print "-------------------------TCP"
                     print "source ip address is", source_addr
                     print "destination ip address is", dest_addr
                     print "source port is", source_port
@@ -103,6 +103,11 @@ class Firewall:
                     if matchRes == "pass":
                         self.iface_ext.send_ip_packet(pkt)
             else:
+                print "-----------------------------UDP"
+                print "source ip address is", source_addr
+                print "destination ip address is", dest_addr
+                print "source port is", source_port
+                print "destination port is", dest_port
                 if pkt_dir==PKT_DIR_OUTGOING and dest_port==53:     # treat only the udp portion of the pkt as the argument
                     dnsQueryBool, dnsName = self.checkDnsQuery(pkt[ip_header_len:])
                     # dnsQueryBool = False
@@ -121,7 +126,7 @@ class Firewall:
                             print "DNS query packet"
                         ## do something here
                         dns_matching_result = self.dnsMatching(dnsName)
-                        if dns_matching_result=="pass" or dns_matching_result=="no-match":     ##TODO: check if it's the last rule
+                        if dns_matching_result=="pass" or dns_matching_result=="no-match":
                             self.iface_ext.send_ip_packet(pkt)
                         else:   # dns_matching_result=="drop":
                             if self.debug:
@@ -359,13 +364,4 @@ class Firewall:
             return [True, dnsName]
         return [False, dnsName]
 
-
-
-
-
-
-
-# TODO: You may want to add more classes/functions as well.
-
-    # TODO: multiple rules are matched, use the last one
 
