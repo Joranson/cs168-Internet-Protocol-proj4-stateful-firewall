@@ -96,35 +96,30 @@ class Firewall:
                     if matchRes == "pass":
                         self.iface_ext.send_ip_packet(pkt)
             else:
-                if pkt_dir == PKT_DIR_OUTGOING:
-                    self.iface_ext.send_ip_packet(pkt)
+                if pkt_dir==PKT_DIR_OUTGOING and dest_port==53:     # treat only the udp portion of the pkt as the argument
+                    dnsQueryBool, dnsName = self.checkDnsQuery(pkt[ip_header_len:])
+                    # dnsQueryBool = False
+                    if not dnsQueryBool:
+                        if self.debug:
+                            print "Normal UDP with port=53 and OUTGOING"
+                        self.iface_ext.send_ip_packet(pkt)
+                    else:
+                        if self.debug:
+                            print "DNS query packet"
+                        ## do something here
+                        dns_matching_result = self.dnsMatching(dnsName)
+                        if dns_matching_result=="pass" or dns_matching_result=="no-match":     ##TODO: check if it's the last rule
+                            self.iface_ext.send_ip_packet(pkt)
+                        else:   # dns_matching_result=="drop":
+                            if self.debug:
+                                print "DROPPING DNS QUERY MATCHED"
                 else:
-                    self.iface_int.send_ip_packet(pkt)
-               # if pkt_dir==PKT_DIR_OUTGOING and dest_port==53:     # treat only the udp portion of the pkt as the argument
-#                    dnsQueryBool, dnsName = self.checkDnsQuery(pkt[ip_header_len:])
-                    #dnsQueryBool = False
-                    #if not dnsQueryBool:
-                    #    if self.debug:
-                    #        print "Normal UDP with port=53 and OUTGOING"
-                    #    self.iface_int.send_ip_packet(pkt)
-                    #else:
-                    #    if self.debug:
-                    #        print "DNS query packet"
-                    #    ## do something here
-                    #    dns_matching_result = self.dnsMatching(dnsName)
-                    #    if dns_matching_result=="pass":     ##TODO: check if it's the last rule
-                    #        pass
-                    #    elif dns_matching_result=="drop":
-                    #        pass
-                    #    else:
-                    #        pass
-                #else:
-                #    if self.debug:
-                #        print "Normal UDP"
-                #    if pkt_dir -- PKT_DIR_OUTGOING:
-                #        self.iface_int.send_ip_packet(pkt)
-                #    else:
-                #        self.iface_ext.send_ip_packet(pkt)
+                    if self.debug:
+                        print "Normal UDP"
+                    if pkt_dir == PKT_DIR_OUTGOING:
+                        self.iface_ext.send_ip_packet(pkt)
+                    else:
+                        self.iface_int.send_ip_packet(pkt)
         elif pkt_info['ip_protocal'] == 1:
             if self.debug:
                 print "ICMP"
@@ -283,7 +278,7 @@ class Firewall:
                 for i in range(1,len(dnsAddr_lst)):
                     if dnsAddr_lst[-i]=="*":
                         break
-                    elif dnsAddr_lst[-i]!=addr[-i]:
+                    elif dnsAddr_lst[-i]!=addr_lst[-i]:
                         matched = False
                         break
                 if matched:
@@ -298,9 +293,10 @@ class Firewall:
             return [False, ""]
         j = 20
         dnsName = ""
+        print "PKT: ", pkt, " length: ", len(pkt)
         while j<udpLength:
-            hex = struct.unpack("!B",pkt[udpLength+j])
-            if struct.unpack("!B",pkt[udpLength+j])==0x00:
+            hex = struct.unpack("!B",pkt[j])[0]
+            if hex==0x00:
                 j+=1
                 break
             else:
@@ -309,9 +305,9 @@ class Firewall:
                 elif dnsName!="": # beginning of parsing, first hex number not letters/hyphens is just number of letters behind
                     dnsName = dnsName+"."       # adding dot
                 j+=1
-        dnsName = dnsName.lower()
+        dnsName=dnsName.lower()
         QTYPE = struct.unpack("!H", pkt[j:j+2])[0]
-        QCLASS = struct.unpack("!H", pkt[j+2:j+4])
+        QCLASS = struct.unpack("!H", pkt[j+2:j+4])[0]
         if (QTYPE==1 or QTYPE==28) and QCLASS==1 and QDCOUNT==1:
             return [True, dnsName]
         return [False, dnsName]

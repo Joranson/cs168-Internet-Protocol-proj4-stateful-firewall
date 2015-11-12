@@ -2,3 +2,6 @@
 *.pyc
 ok
 ok-tools/
+.ok_messages
+.rules.conf
+.ok_refresh
