@@ -18,21 +18,28 @@ class Firewall:
 
         self.ipv4ProHash = {1:'icmp', 6:'tcp', 17:'udp'}
         
-        self.rules = []
+        self.RawRules = []
         with open(config['rule']) as f:
-            self.rules = f.readlines()
-        self.rules = [rule.rstrip().split() for rule in self.rules if rule[0:4]=='pass' or rule[0:4]=='drop']
-        self.dnsRules = [elem for elem in self.rules if elem[1]=="dns" and ("*" not in elem[2] or ("*" in elem[2] and elem[2][0]=="*"))]
-
-        for dnsRule in self.dnsRules:   # covert all domain names into lower cas:
-            dnsRule[2] = dnsRule[2].lower()
+            self.RawRules = f.readlines()
+        self.rules = []     # store only valid rules
+        for rule in self.RawRules:
+            rule = rule.rstrip().split()
+            if len(rule)<3:
+                continue
+            if rule[0]=="drop" or rule[0]=="pass":
+                if rule[1]=="dns" and len(rule)==3:
+                    if "*" not in rule[2] or ("*" in rule[2] and rule[2][0]=="*"):
+                        rule[2] = rule[2].lower()  # covert all domain names into lower case
+                        self.rules.append(rule)
+                else:
+                    if len(rule)!=4:
+                        continue
+                    self.rules.append(rule)
 
         if self.debug:
             for i in self.rules:
                 print i
                 print "Initialization finished"
-            for j in self.dnsRules:
-                print "dnsRule:", j
                 
         # Load the GeoIP DB
         self.geoDb = []
@@ -268,21 +275,29 @@ class Firewall:
                                     
     def dnsMatching(self, addr):        # make sure the dnsName are all in lower case
         addr_lst = addr.split(".")
-        for j in range(1,len(self.dnsRules)+1):
-            dnsRule = self.dnsRules[-j]
-            dnsAddr_lst = dnsRule[2].split(".")
-            matched = True
-            if len(dnsAddr_lst)>len(addr_lst):
-                continue
+        for j in range(1,len(self.rules)+1):
+            rule = self.rules[-j]
+            if rule[1]=="dns":
+                dnsRule = rule
+                dnsAddr_lst = dnsRule[2].split(".")
+                matched = True
+                if len(dnsAddr_lst)>len(addr_lst):
+                    continue
+                else:
+                    for i in range(1,len(dnsAddr_lst)+1):
+                        if dnsAddr_lst[-i]=="*":
+                            break
+                        elif dnsAddr_lst[-i]!=addr_lst[-i]:
+                            matched = False
+                            break
+                    if matched:
+                        return dnsRule[0]
             else:
-                for i in range(1,len(dnsAddr_lst)):
-                    if dnsAddr_lst[-i]=="*":
-                        break
-                    elif dnsAddr_lst[-i]!=addr_lst[-i]:
-                        matched = False
-                        break
-                if matched:
-                    return dnsRule[0]
+                if rule[1]=="udp":
+                    if rule[2]=="any" and (rule[3]=="53" or rule[3]=="any"):
+                        return rule[0]
+                    ## TODO: what if rule[2] is an IP address?
+
         return "no-match"    # self-defined third return value besides "pass" and "drop"
 
     def checkDnsQuery(self, pkt):
