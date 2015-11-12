@@ -210,7 +210,7 @@ class Firewall:
                 return None
         res = self.findCtry(ip, 0, len(self.geoDb)-1)
         if self.debug:
-            print "country found:", res
+            print "country found:", res.lower()
         if res == None:
             return False
         if res.lower() == ctry.lower():
@@ -240,15 +240,19 @@ class Firewall:
 
 
     def proIpPortMatching(self, pkt_info):
-        print "entered proTpPortMatching"
-        print pkt_info
+        if self.debug:
+            print "entered proTpPortMatching"
+            print pkt_info
         for rule in reversed(self.rules):
-            print "rule is", rule
+            if self.debug:
+                print "rule is", rule
             if self.ipv4ProHash[pkt_info['ip_protocal']] == rule[1]:
-                print "pkt's ipv4 protocal:", rule[1]
+                if self.debug:
+                    print "pkt's ipv4 protocal:", rule[1]
                 if len(rule[2]) == 2:
                     # country code
-                    print "isInCountry:", self.isInCountry(pkt_info['external_ip'], rule[2])
+                    if self.debug:
+                        print "isInCountry:", self.isInCountry(pkt_info['external_ip'], rule[2])
                     if self.isInCountry(pkt_info['external_ip'], rule[2]):
                         if rule[3] == 'any':
                             return rule[0]
@@ -262,7 +266,8 @@ class Firewall:
                                 return rule[0]
                     
                 elif rule[2]  == 'any':
-                    print "rule says that external ip can be anything"
+                    if self.debug:
+                        print "rule says that external ip can be anything"
                     if rule[3] == 'any':
                         return rule[0]
                     elif '-' in rule[3]:
@@ -271,7 +276,8 @@ class Firewall:
                         if pkt_info['external_port'] <= upper and pkt_info['external_port'] >= lower:
                             return rule[0]
                     else:
-                        print "rule says that external port should be", rule[3]
+                        if self.debug:
+                            print "rule says that external port should be", rule[3]
                         if pkt_info['external_port'] == int(rule[3]):
                             return rule[0]
                 else:
