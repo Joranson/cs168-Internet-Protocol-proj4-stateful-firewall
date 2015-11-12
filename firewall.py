@@ -14,7 +14,7 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
 
-        self.debug = True
+        self.debug = False
 
         self.ipv4ProHash = {1:'icmp', 6:'tcp', 17:'udp'}
         
@@ -24,6 +24,7 @@ class Firewall:
         self.rules = []     # store only valid rules
         for rule in self.RawRules:
             rule = rule.rstrip().split()
+            rule = [r.lower() for r in rule]
             if len(rule)<3:
                 continue
             if rule[0]=="drop" or rule[0]=="pass":
@@ -244,6 +245,7 @@ class Firewall:
             print "entered proTpPortMatching"
             print pkt_info
         for rule in reversed(self.rules):
+            rule = [r.lower() for r in rule]
             if self.debug:
                 print "rule is", rule
             if self.ipv4ProHash[pkt_info['ip_protocal']] == rule[1]:
