@@ -396,8 +396,6 @@ class Firewall:
                                     if pkt_info['external_port'] == int(rule[3]):
                                         return rule[0]
 
-                    ## TODO: what if rule[2] is an IP address?
-
         return "no-match"    # self-defined third return value besides "pass" and "drop"
 
     def checkDnsQuery(self, pkt):
@@ -415,7 +413,7 @@ class Firewall:
                 j+=1
                 break
             else:
-                if (hex>=65 and hex<=90) or (hex>=97 and hex<=122) or hex==45:  # only alphabetic letters and hyphen are permitted as dns name
+                if (hex>=65 and hex<=90) or (hex>=97 and hex<=122) or (hex>=48 and hex<=57) or hex==45:  # only alphabetic letters, digits and hyphen are permitted as dns name
                     dnsName = dnsName+chr(hex)
                 elif dnsName!="": # beginning of parsing, first hex number not letters/hyphens is just number of letters behind
                     dnsName = dnsName+"."       # adding dot
