@@ -176,7 +176,9 @@ class Firewall:
         res = self.findCtry(ip, 0, len(self.geoDb)-1)
         if self.debug:
             print "country found:", res
-        if res.lower() == ctry:
+        if res == None:
+            return False
+        if res.lower() == ctry.lower():
             return True
         return False
 
