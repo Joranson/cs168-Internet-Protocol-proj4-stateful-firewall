@@ -269,8 +269,14 @@ class Firewall:
                     quad = rule[2].split('.')
                     if '/' in quad[3]:
                         # an IP prefix
-                        offset = int(quad[3].split('/')[1])
-                        if self.dotQuadToInt(quad) >> offset == pkt_info['external_ip'] >> offset:
+                        last_quad, offset = quad[3].split('/')
+                        last_quad = int(last_quad)
+                        offset = int(offset)
+                        base_quad = quad[:3]
+                        base_quad.append(last_quad)
+                        if self.dotQuadToInt(base_quad) >> (32 - offset) == self.dotQuadToInt(pkt_info['external_ip']) >> (32 - offset):
+                            if self.debug:
+                                print "range matched:", quad
                             if rule[3] == 'any':
                                 return rule[0]
                             elif '-' in rule[3]:
@@ -283,7 +289,9 @@ class Firewall:
                                     return rule[0]
                     else:
                         # a single IP address
-                        if self.dotQuadToInt(quad) == pkt_info['external_ip']:
+                        if self.dotQuadToInt(quad) == self.dotQuadToInt(pkt_info['external_ip']):
+                            if self.debug:
+                                print "single ip matched:", quad
                             if rule[3] == 'any':
                                 return rule[0]
                             elif '-' in rule[3]:
