@@ -268,12 +268,12 @@ class Firewall:
                                     
     def dnsMatching(self, addr):        # make sure the dnsName are all in lower case
         addr_lst = addr.split(".")
-        for j in range(1,len(self.dnsRules)):
+        for j in range(1,len(self.dnsRules)+1):
             dnsRule = self.dnsRules[-j]
             dnsAddr_lst = dnsRule[2].split(".")
             matched = True
             if len(dnsAddr_lst)>len(addr_lst):
-                break
+                continue
             else:
                 for i in range(1,len(dnsAddr_lst)):
                     if dnsAddr_lst[-i]=="*":
