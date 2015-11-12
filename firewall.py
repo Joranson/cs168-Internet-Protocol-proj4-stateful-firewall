@@ -109,7 +109,13 @@ class Firewall:
                     if not dnsQueryBool:
                         if self.debug:
                             print "Normal UDP with port=53 and OUTGOING"
-                        self.iface_ext.send_ip_packet(pkt)
+                        pkt_info['external_port'] = dest_port
+                        pkt_info['external_ip'] = dest_addr
+                        matchRes = self.proIpPortMatching(pkt_info)
+                        if self.debug:
+                            print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
+                        if matchRes == "pass":
+                            self.iface_ext.send_ip_packet(pkt)
                     else:
                         if self.debug:
                             print "DNS query packet"
@@ -123,10 +129,6 @@ class Firewall:
                 else:
                     if self.debug:
                         print "Normal UDP"
-                    if pkt_dir == PKT_DIR_OUTGOING:
-                        self.iface_ext.send_ip_packet(pkt)
-                    else:
-                        self.iface_int.send_ip_packet(pkt)
 
                     if pkt_dir == PKT_DIR_INCOMING:
                         if self.debug:
