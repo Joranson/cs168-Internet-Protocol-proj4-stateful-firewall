@@ -120,6 +120,28 @@ class Firewall:
                         self.iface_ext.send_ip_packet(pkt)
                     else:
                         self.iface_int.send_ip_packet(pkt)
+
+                    if pkt_dir == PKT_DIR_INCOMING:
+                        if self.debug:
+                            print "incoming packet"
+                        pkt_info['external_port'] = source_port
+                        pkt_info['external_ip'] = source_addr
+                        matchRes = self.proIpPortMatching(pkt_info)
+                        if self.debug:
+                            print "+++++++++++++++++++incoming packet rule matching result says,", matchRes
+                        if matchRes == "pass":
+                            self.iface_int.send_ip_packet(pkt)
+                    else:
+                        if self.debug:
+                            print "outgoing packet"
+                        pkt_info['external_port'] = dest_port
+                        pkt_info['external_ip'] = dest_addr
+                        matchRes = self.proIpPortMatching(pkt_info)
+                        if self.debug:
+                            print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
+                        if matchRes == "pass":
+                            self.iface_ext.send_ip_packet(pkt)
+
         elif pkt_info['ip_protocal'] == 1:
             if self.debug:
                 print "ICMP"
@@ -252,7 +274,7 @@ class Firewall:
                                     return rule[0]
                     else:
                         # a single IP address
-                        if self.dotQuadToInt(quad) >> offset == pkt_info['external_ip']:
+                        if self.dotQuadToInt(quad) == pkt_info['external_ip']:
                             if rule[3] == 'any':
                                 return rule[0]
                             elif '-' in rule[3]:
