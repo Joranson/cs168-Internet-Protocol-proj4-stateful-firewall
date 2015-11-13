@@ -14,7 +14,7 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
 
-        self.debug = False
+        self.debug = True
 
         self.ipv4ProHash = {1:'icmp', 6:'tcp', 17:'udp'}
         
@@ -345,7 +345,8 @@ class Firewall:
                 if rule[1]=="udp":
                     if len(rule[2]) == 2:
                         # country code
-                        print "isInCountry:", self.isInCountry(pkt_info['external_ip'], rule[2])
+                        if self.debug:
+                            print "isInCountry:", self.isInCountry(pkt_info['external_ip'], rule[2])
                         if self.isInCountry(pkt_info['external_ip'], rule[2]):
                             if rule[3] == 'any':
                                 return rule[0]
@@ -359,7 +360,8 @@ class Firewall:
                                     return rule[0]
 
                     elif rule[2]  == 'any':
-                        print "rule says that external ip can be anything"
+                        if self.debug:
+                            print "rule says that external ip can be anything"
                         if rule[3] == 'any':
                             return rule[0]
                         elif '-' in rule[3]:
@@ -368,7 +370,8 @@ class Firewall:
                             if pkt_info['external_port'] <= upper and pkt_info['external_port'] >= lower:
                                 return rule[0]
                         else:
-                            print "rule says that external port should be", rule[3]
+                            if self.debug:
+                                print "rule says that external port should be", rule[3]
                             if pkt_info['external_port'] == int(rule[3]):
                                 return rule[0]
                     else:
@@ -419,7 +422,8 @@ class Firewall:
             return [False, ""]
         j = 20
         dnsName = ""
-        print "PKT: ", pkt, " length: ", len(pkt)
+        if self.debug:
+            print "PKT: ", pkt, " length: ", len(pkt)
         while j<udpLength:
             hex = struct.unpack("!B",pkt[j])[0]
             if hex==0x00:
