@@ -14,7 +14,7 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
 
-        self.debug = True
+        self.debug = False
 
         self.ipv4ProHash = {1:'icmp', 6:'tcp', 17:'udp'}
         
