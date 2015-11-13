@@ -14,7 +14,7 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
 
-        self.debug = True
+        self.debug = False
 
         self.ipv4ProHash = {1:'icmp', 6:'tcp', 17:'udp'}
         
@@ -46,7 +46,7 @@ class Firewall:
         self.geoDb = []
         with open('geoipdb.txt') as f:
             self.geoDb = f.readlines()
-        self.geoDb = [(entry.rstrip()).split(' ') for entry in self.geoDb]
+        self.geoDb = [(entry.rstrip()).split() for entry in self.geoDb if entry.rstrip()!=""]
 
 
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
@@ -92,6 +92,7 @@ class Firewall:
                     if self.debug:
                         print "+++++++++++++++++++incoming packet rule matching result says,", matchRes
                     if matchRes == "pass":
+                        print "SENT"
                         self.iface_int.send_ip_packet(pkt)
                 else:
                     if self.debug:
@@ -102,6 +103,7 @@ class Firewall:
                     if self.debug:
                         print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
                     if matchRes == "pass":
+                        print "SENT"
                         self.iface_ext.send_ip_packet(pkt)
             else:
                 if self.debug:
@@ -121,6 +123,7 @@ class Firewall:
                         if self.debug:
                             print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
                         if matchRes == "pass":
+                            print "SENT"
                             self.iface_ext.send_ip_packet(pkt)
                     else:
                         if self.debug:
@@ -128,6 +131,7 @@ class Firewall:
                         ## do something here
                         dns_matching_result = self.dnsMatching(dnsName, pkt_info)
                         if dns_matching_result=="pass" or dns_matching_result=="no-match":
+                            print "SENT"
                             self.iface_ext.send_ip_packet(pkt)
                         else:   # dns_matching_result=="drop":
                             if self.debug:
@@ -145,6 +149,7 @@ class Firewall:
                         if self.debug:
                             print "+++++++++++++++++++incoming packet rule matching result says,", matchRes
                         if matchRes == "pass":
+                            print "SENT"
                             self.iface_int.send_ip_packet(pkt)
                     else:
                         if self.debug:
@@ -155,6 +160,7 @@ class Firewall:
                         if self.debug:
                             print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
                         if matchRes == "pass":
+                            print "SENT"
                             self.iface_ext.send_ip_packet(pkt)
 
         elif pkt_info['ip_protocal'] == 1:
@@ -170,6 +176,7 @@ class Firewall:
                 if self.debug:
                     print "+++++++++++++++++++incoming packet rule matching result says,", matchRes
                 if matchRes == "pass":
+                    print "SENT"
                     self.iface_int.send_ip_packet(pkt)
             else:
                 if self.debug:
@@ -179,13 +186,16 @@ class Firewall:
                 if self.debug:
                     print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
                 if matchRes == "pass":
+                    print "SENT"
                     self.iface_ext.send_ip_packet(pkt)
         else:
             if self.debug:
                 print "The potocal is", pkt_info['ip_protocal']
             if pkt_dir == PKT_DIR_OUTGOING:
+                print "SENT"
                 self.iface_ext.send_ip_packet(pkt)
             else:
+                print "SENT"
                 self.iface_int.send_ip_packet(pkt)
 
     def intToDotQuad(self, addr):
@@ -210,11 +220,11 @@ class Firewall:
             if i < 0 or i > 255:
                 return None
         res = self.findCtry(ip, 0, len(self.geoDb)-1)
-        if self.debug:
-            print "country found:", res.lower()
         if res == None:
             return False
         if res.lower() == ctry.lower():
+            if self.debug:
+                print "country found:", res.lower()
             return True
         return False
 
@@ -254,7 +264,7 @@ class Firewall:
                 if len(rule[2]) == 2:
                     # country code
                     if self.debug:
-                        print "isInCountry:", self.isInCountry(pkt_info['external_ip'], rule[2])
+                        print "isInCountry: \n", self.isInCountry(pkt_info['external_ip'], rule[2])
                     if self.isInCountry(pkt_info['external_ip'], rule[2]):
                         if rule[3] == 'any':
                             return rule[0]
