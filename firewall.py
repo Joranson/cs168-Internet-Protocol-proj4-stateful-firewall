@@ -14,7 +14,7 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
 
-        self.debug = False
+        self.debug = True
 
         self.ipv4ProHash = {1:'icmp', 6:'tcp', 17:'udp'}
         
@@ -231,6 +231,8 @@ class Firewall:
     def findCtry(self, ip, start, end):
         if self.debug:
             print "start:", start, "and end:", end
+        if start>end:
+            return None
         if start == end:
             mid = self.geoDb[start]
             lower, upper = mid[0].split('.'), mid[1].split('.')
