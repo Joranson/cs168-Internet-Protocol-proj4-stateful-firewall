@@ -14,7 +14,7 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
 
-        self.debug = False
+        self.debug = True
 
         self.ipv4ProHash = {1:'icmp', 6:'tcp', 17:'udp'}
         
@@ -27,7 +27,7 @@ class Firewall:
             rule = [r.lower() for r in rule]
             if len(rule)<3:
                 continue
-            if rule[0]=="drop" or rule[0]=="pass":
+            if rule[0]=="deny" or rule[0]=="drop" or rule[0]=="pass":
                 if rule[1]=="dns" and len(rule)==3:
                     if "*" not in rule[2] or ("*" in rule[2] and rule[2][0]=="*"):
                         rule[2] = rule[2].lower()  # covert all domain names into lower case
@@ -48,6 +48,72 @@ class Firewall:
             self.geoDb = f.readlines()
         self.geoDb = [(entry.rstrip()).split() for entry in self.geoDb if entry.rstrip()!=""]
 
+    def create_ip_deny_packet_header(self, source_addr, dest_addr):
+        if self.debug:
+            print "constructing ip header"
+        ip_version_ihl = (4 << 4) + 5
+        ip_tos = 0
+        ip_total_len = 40
+        ip_iden = 0
+        ip_flags_frag_offset = 0
+        ip_ttl_proto = (1 << 8) + 6
+        ip_checksum = 0
+        
+        new_pkt = struct.pack('!B', ip_version_ihl) + struct.pack('!B', ip_tos) + struct.pack('!H', ip_total_len) + struct.pack('!H', ip_iden) + struct.pack('!H', ip_flags_frag_offset)+struct.pack('!H', ip_ttl_proto)+struct.pack('!H', ip_checksum)+source_addr+dest_addr
+
+        if self.debug:
+            print "ip version", struct.unpack('!B', new_pkt[0])[0] >> 4
+            print "ip header length", (struct.unpack('!B', new_pkt[0])[0] & 15) * 4
+            print "the total length of packet is ", struct.unpack('!H', new_pkt[2:4])
+        # Compute checksum
+        all_sum = 0
+        print "length of pkt is", len(new_pkt)
+        for i in range(10):
+            all_sum += struct.unpack('!H', new_pkt[2*i:2*i+2])[0]
+        all_sum -= struct.unpack('!H', new_pkt[10:12])[0]
+        while all_sum > (2**16 - 1):
+            all_sum = all_sum % (2**16) + (all_sum >> 16)
+        computed_checksum = all_sum ^ (2**16 - 1)
+        
+        new_pkt = new_pkt[:10] + struct.pack('!H', computed_checksum) + new_pkt[12:]
+        return new_pkt
+
+
+    def create_tcp_deny_packet(self, source_addr, dest_addr, source_port, dest_port, ack_no):
+        ip_header = self.create_ip_deny_packet_header(source_addr, dest_addr)
+
+        if self.debug:
+            print "constructing tcp header"
+
+        ip_proto = 6
+        tcp_header_len = 20
+        tcp_seq_no = 0
+        tcp_offset_res_flags = (5 << 12) + 20
+        tcp_window = 0
+        tcp_checksum = 0
+        tcp_urgent_pointer = 0
+        
+        tcp_header = source_port + dest_port + struct.pack('!L', tcp_seq_no) + ack_no + struct.pack('!H', tcp_offset_res_flags) + struct.pack('!H', tcp_window) + struct.pack('!H', tcp_checksum) + struct.pack('!H', tcp_urgent_pointer)
+        psuedo_tcp_header = source_addr + dest_addr + struct.pack('!H', ip_proto) + struct.pack('!H', tcp_header_len) + tcp_header
+
+        if self.debug:
+            print "tcp header length", len(tcp_header)
+            print "tcp flag is", struct.unpack('!H', psuedo_tcp_header[24:26])[0] & 15
+            print "tcp source port is", struct.unpack('!H', psuedo_tcp_header[12:14])[0]
+            print "tcp destination port is", struct.unpack('!H', psuedo_tcp_header[14:16])[0]
+        
+        # compute tcp checksum
+        all_sum = 0
+        for i in range(15):
+            all_sum += struct.unpack('!H', psuedo_tcp_header[2*i:2*i+2])[0]
+        all_sum -= struct.unpack('!H', psuedo_tcp_header[28:30])[0]
+        print "checksum subtracted:", struct.unpack('!H', psuedo_tcp_header[28:30])[0]
+        while all_sum > (2**16 - 1):
+            all_sum = all_sum % (2**16) + (all_sum >> 16)
+        computed_checksum = all_sum ^ (2**16 - 1)
+        tcp_header = tcp_header[:16] + struct.pack('!H', computed_checksum) + tcp_header[18:];
+
+        return ip_header + tcp_header
 
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
     # @pkt: the actual data of the IPv4 packet (including IP header)
@@ -61,19 +127,22 @@ class Firewall:
         ip_header_len =  (struct.unpack('!B', pkt[0])[0] & 15) * 4
         # ip_header_len =  struct.unpack('!B', pkt[0])[0] & 7
 
-
         if self.debug:
             print "header version is", ip_version, "and header length is", ip_header_len
-            print "the total length of packet is ", struct.unpack('!H', pkt[2:4])
-        
-        source_addr = self.intToDotQuad(struct.unpack('!L', pkt[12:16])[0])
-        dest_addr = self.intToDotQuad(struct.unpack('!L', pkt[16:20])[0])
+            print "the total length of packet is", struct.unpack('!H', pkt[2:4])[0]
+            print "checksum is", struct.unpack('!H', pkt[10:12])[0]
+            
+        source_addr_str = pkt[12:16]
+        source_addr = self.intToDotQuad(struct.unpack('!L', source_addr_str)[0])
+        dest_addr_str = pkt[16:20]
+        dest_addr = self.intToDotQuad(struct.unpack('!L', dest_addr_str)[0])
 
         if pkt_info['ip_protocal'] == 6 or pkt_info['ip_protocal']==17:
 
-           
-            source_port = struct.unpack('!H', pkt[ip_header_len:ip_header_len + 2])[0]
-            dest_port = struct.unpack('!H', pkt[ip_header_len + 2:ip_header_len + 4])[0]
+            source_port_str = pkt[ip_header_len:ip_header_len + 2]
+            source_port = struct.unpack('!H', source_port_str)[0]
+            dest_port_str = pkt[ip_header_len + 2:ip_header_len + 4]
+            dest_port = struct.unpack('!H', dest_port_str)[0]
 
             if pkt_info['ip_protocal'] == 6:
                 if self.debug:
@@ -94,6 +163,12 @@ class Firewall:
                     if matchRes == "pass":
                         print "SENT"
                         self.iface_int.send_ip_packet(pkt)
+                    elif matchRes == "deny":
+                        if self.debug:
+                            print "deny this packet"
+                        ack_num = struct.unpack('!L', pkt[ip_header_len + 4:ip_header_len + 8])[0] + 1
+                        return_pkt = self.create_tcp_deny_packet(dest_addr_str, source_addr_str, dest_port_str, source_port_str, struct.pack('!L', ack_num))
+                        self.iface_ext.send_ip_packet(return_pkt)
                 else:
                     if self.debug:
                         print "outgoing packet"
@@ -105,6 +180,12 @@ class Firewall:
                     if matchRes == "pass":
                         print "SENT"
                         self.iface_ext.send_ip_packet(pkt)
+                    elif matchRes == "deny":
+                        if self.debug:
+                            print "deny this packet"
+                        ack_num = struct.unpack('!L', pkt[ip_header_len + 4:ip_header_len + 8])[0] + 1
+                        return_pkt = self.create_tcp_deny_packet(dest_addr_str, source_addr_str, dest_port_str, source_port_str, struct.pack('!L', ack_num))
+                        self.iface_int.send_ip_packet(return_pkt)
             else:
                 if self.debug:
                     print "-----------------------------UDP"
