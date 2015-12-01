@@ -48,15 +48,15 @@ class Firewall:
             self.geoDb = f.readlines()
         self.geoDb = [(entry.rstrip()).split() for entry in self.geoDb if entry.rstrip()!=""]
 
-    def create_ip_deny_packet_header(self, source_addr, dest_addr):
+    def create_ip_deny_packet_header(self, source_addr, dest_addr, ip_protocol, total_length):
         if self.debug:
             print "constructing ip header"
         ip_version_ihl = (4 << 4) + 5
         ip_tos = 0
-        ip_total_len = 40
+        ip_total_len = total_length
         ip_iden = 0
         ip_flags_frag_offset = 0
-        ip_ttl_proto = (1 << 8) + 6
+        ip_ttl_proto = (1 << 8) + ip_protocol
         ip_checksum = 0
         
         new_pkt = struct.pack('!B', ip_version_ihl) + struct.pack('!B', ip_tos) + struct.pack('!H', ip_total_len) + struct.pack('!H', ip_iden) + struct.pack('!H', ip_flags_frag_offset)+struct.pack('!H', ip_ttl_proto)+struct.pack('!H', ip_checksum)+source_addr+dest_addr
@@ -78,9 +78,41 @@ class Firewall:
         new_pkt = new_pkt[:10] + struct.pack('!H', computed_checksum) + new_pkt[12:]
         return new_pkt
 
+    def create_dns_deny_packet(self, source_addr, dest_addr, source_port, dest_port, ip_pkt, ip_header_len):
+        pkt = ip_pkt[ip_header_len:]
+        if self.debug:
+            print "constructing IP header for DNS deny packet"
+        old_dnsHeader = pkt[8:20]
+        old_AA = struct.unpack('!H', old_dnsHeader[2:4])[0] & (((2**5-1)<<11)+(2**10-1))
+        old_RD_and_RA = struct.unpack('!H', old_dnsHeader[2:4])[0] & (((2**7-1)<<9)+(2**7-1))
+        dns_header_QR_to_RCODE = struct.pack("!H",(1<<15) + old_AA + old_RD_and_RA)
+            #     For DNS header:
+            # a) copy ID as is
+            # b) QR = 1, Opcode = 0, AA = as is, TC = 0, RD = as is, RA = as is, RCODE = 0
+            # c) QDCount = as is (1)
+            # d) ANCOUNT = 1
+            # e) NSCOUNT, ARCOUNT = 0
+        new_dnsHeader = old_dnsHeader[:2] + dns_header_QR_to_RCODE + old_dnsHeader[4:6] + struct.pack("!H", 1) + struct.pack("!H", 0) + struct.pack("!H", 0)
+        old_udpLength = struct.unpack('!H', pkt[4:6])[0]
+        j = self.getQName(pkt, old_udpLength)[1]
+        new_dnsQuestion = pkt[20:j+4]
+        answer_name = pkt[20:j]
+        answer_type = struct.pack("!H", 1)
+        answer_class = struct.pack("!H", 1)
+        answer_ttl = struct.pack("!L", 1)
+        answer_RDlength = struct.pack("!H", 4)
+        answer_RData = struct.pack("!B", 169)+struct.pack("!B", 229)+struct.pack("!B", 49)+struct.pack("!B", 130)
+        new_dnsAnswer = answer_name+answer_type+answer_class+answer_ttl+answer_RDlength+answer_RData
+
+        udp_length = j+4+(j-20)+2*7 ## TODO: compute this later
+        udp_checksum = 0
+        new_udp_header = source_port+dest_port+struct.pack("!H", udp_length)+struct.pack("!H", udp_checksum)
+        ip_header = self.create_ip_deny_packet_header(source_addr, dest_addr, 17, ip_header_len+udp_length)
+        return ip_header+new_udp_header+new_dnsHeader+new_dnsQuestion+new_dnsAnswer
+
 
     def create_tcp_deny_packet(self, source_addr, dest_addr, source_port, dest_port, ack_no):
-        ip_header = self.create_ip_deny_packet_header(source_addr, dest_addr)
+        ip_header = self.create_ip_deny_packet_header(source_addr, dest_addr, 6, 40)
 
         if self.debug:
             print "constructing tcp header"
@@ -194,7 +226,7 @@ class Firewall:
                     print "source port is", source_port
                     print "destination port is", dest_port
                 if pkt_dir==PKT_DIR_OUTGOING and dest_port==53:     # treat only the udp portion of the pkt as the argument
-                    dnsQueryBool, dnsName = self.checkDnsQuery(pkt[ip_header_len:])
+                    dnsQueryBool, sendDnsResponseBool, dnsName = self.checkDnsQuery(pkt[ip_header_len:])
                     pkt_info['external_port'] = dest_port
                     pkt_info['external_ip'] = dest_addr
                     if not dnsQueryBool:
@@ -217,6 +249,10 @@ class Firewall:
                         else:   # dns_matching_result=="drop":
                             if self.debug:
                                 print "DROPPING DNS QUERY MATCHED"
+                            if sendDnsResponseBool:
+                                response = self.create_dns_deny_packet(dest_addr_str, source_addr_str, dest_port_str, source_port_str, pkt, ip_header_len)
+                                self.iface_int.send_ip_packet(response)
+
                 else:
                     if self.debug:
                         print "Normal UDP"
@@ -507,16 +543,35 @@ class Firewall:
 
         return "no-match"    # self-defined third return value besides "pass" and "drop"
 
-    def checkDnsQuery(self, pkt):
+    def checkDnsQuery(self, pkt): # return [isDnsQuery, sendDnsResponse, dnsName]
+        """
+        :rtype: a tuple of (isDnsQuery, isDeny, dnsName)
+        """
         udpLength = struct.unpack('!H', pkt[4:6])[0]
         dnsHeader = pkt[8:20]
         QDCOUNT = struct.unpack("!H", dnsHeader[4:6])[0]
         if QDCOUNT!=1:
-            return [False, ""]
-        j = 20
-        dnsName = ""
+            return False, False, ""
         if self.debug:
             print "PKT: ", pkt, " length: ", len(pkt)
+        dnsName, j = self.getQName(pkt, udpLength)
+        QTYPE = struct.unpack("!H", pkt[j:j+2])[0]
+        QCLASS = struct.unpack("!H", pkt[j+2:j+4])[0]
+        if QCLASS!=1:
+            return False, False, ""
+        if QTYPE==1:
+            return True, True, dnsName
+        elif QTYPE==28:
+            return True, False, dnsName
+        else:
+            return False, False, dnsName
+
+    def getQName(self, pkt, udpLength):
+        """
+        :rtype: a tuple of (dnsName, Byte-index of the end of QName)
+        """
+        dnsName = ""
+        j = 20
         while j<udpLength:
             hex = struct.unpack("!B",pkt[j])[0]
             if hex==0x00:
@@ -528,11 +583,8 @@ class Firewall:
                 elif dnsName!="": # beginning of parsing, first hex number not letters/hyphens is just number of letters behind
                     dnsName = dnsName+"."       # adding dot
                 j+=1
-        dnsName=dnsName.lower()
-        QTYPE = struct.unpack("!H", pkt[j:j+2])[0]
-        QCLASS = struct.unpack("!H", pkt[j+2:j+4])[0]
-        if (QTYPE==1 or QTYPE==28) and QCLASS==1 and QDCOUNT==1:
-            return [True, dnsName]
-        return [False, dnsName]
+        return dnsName.lower(), j
+
+
 
 
