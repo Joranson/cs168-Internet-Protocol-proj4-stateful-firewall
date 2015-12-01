@@ -14,7 +14,7 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
 
-        self.debug = True
+        self.debug = False
 
         self.ipv4ProHash = {1:'icmp', 6:'tcp', 17:'udp'}
         
@@ -27,7 +27,7 @@ class Firewall:
             rule = [r.lower() for r in rule]
             if len(rule)<3:
                 continue
-            if rule[0]=="deny" or rule[0]=="drop" or rule[0]=="pass":
+            if rule[0]=="deny" or rule[0]=="log":
                 if rule[1]=="dns" and len(rule)==3:
                     if "*" not in rule[2] or ("*" in rule[2] and rule[2][0]=="*"):
                         rule[2] = rule[2].lower()  # covert all domain names into lower case
@@ -42,11 +42,11 @@ class Firewall:
                 print i
                 print "Initialization finished"
                 
-        # Load the GeoIP DB
+        # # Load the GeoIP DB  --  no GeoIP for Project 4. //TODO: clean everything related to GeoIp
         self.geoDb = []
         with open('geoipdb.txt') as f:
             self.geoDb = f.readlines()
-        self.geoDb = [(entry.rstrip()).split() for entry in self.geoDb if entry.rstrip()!=""]
+        self.geoDb = []
 
     def create_ip_deny_packet_header(self, source_addr, dest_addr, ip_protocol, total_length):
         if self.debug:
@@ -193,7 +193,6 @@ class Firewall:
                     if self.debug:
                         print "+++++++++++++++++++incoming packet rule matching result says,", matchRes
                     if matchRes == "pass":
-                        print "SENT"
                         self.iface_int.send_ip_packet(pkt)
                     elif matchRes == "deny":
                         if self.debug:
@@ -210,7 +209,6 @@ class Firewall:
                     if self.debug:
                         print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
                     if matchRes == "pass":
-                        print "SENT"
                         self.iface_ext.send_ip_packet(pkt)
                     elif matchRes == "deny":
                         if self.debug:
@@ -236,7 +234,6 @@ class Firewall:
                         if self.debug:
                             print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
                         if matchRes == "pass":
-                            print "SENT"
                             self.iface_ext.send_ip_packet(pkt)
                     else:
                         if self.debug:
@@ -244,7 +241,6 @@ class Firewall:
                         ## do something here
                         dns_matching_result = self.dnsMatching(dnsName, pkt_info)
                         if dns_matching_result=="pass" or dns_matching_result=="no-match":
-                            print "SENT"
                             self.iface_ext.send_ip_packet(pkt)
                         else:   # dns_matching_result=="drop":
                             if self.debug:
@@ -266,7 +262,6 @@ class Firewall:
                         if self.debug:
                             print "+++++++++++++++++++incoming packet rule matching result says,", matchRes
                         if matchRes == "pass":
-                            print "SENT"
                             self.iface_int.send_ip_packet(pkt)
                     else:
                         if self.debug:
@@ -277,7 +272,6 @@ class Firewall:
                         if self.debug:
                             print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
                         if matchRes == "pass":
-                            print "SENT"
                             self.iface_ext.send_ip_packet(pkt)
 
         elif pkt_info['ip_protocal'] == 1:
@@ -293,7 +287,6 @@ class Firewall:
                 if self.debug:
                     print "+++++++++++++++++++incoming packet rule matching result says,", matchRes
                 if matchRes == "pass":
-                    print "SENT"
                     self.iface_int.send_ip_packet(pkt)
             else:
                 if self.debug:
@@ -303,16 +296,13 @@ class Firewall:
                 if self.debug:
                     print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
                 if matchRes == "pass":
-                    print "SENT"
                     self.iface_ext.send_ip_packet(pkt)
         else:
             if self.debug:
                 print "The potocal is", pkt_info['ip_protocal']
             if pkt_dir == PKT_DIR_OUTGOING:
-                print "SENT"
                 self.iface_ext.send_ip_packet(pkt)
             else:
-                print "SENT"
                 self.iface_int.send_ip_packet(pkt)
 
     def intToDotQuad(self, addr):

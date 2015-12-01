@@ -1,6 +1,6 @@
 {
-    "name": "Project 3",
-    "endpoint": "cal/cs168/fa15/proj3",
+    "name": "Project 4",
+    "endpoint": "cal/cs168/fa15/proj4",
     "src": [
         "firewall.py"
     ],
