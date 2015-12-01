@@ -1,0 +1,7 @@
+GET / HTTP/1.1
+Host: google.com
+UserAgent:Webs-niffer/1.0.46 (+http://web-sniffer.net/
+AcceptEncoding:gzip
+AcceptCharset:ISO-8859-1,UTF-8;q=0.7,*;q=0.7
+CacheControl:no-cache
+Accept-Language:de,en;q=0.7,en-us;q=0.3
