@@ -312,8 +312,8 @@ class Firewall:
     def findCtry(self, ip, start, end):
         if self.debug:
             print "start:", start, "and end:", end
-        # if start>end:
-        #     return None
+        if start>end:
+            return None
         if start == end:
             mid = self.geoDb[start]
             lower, upper = mid[0].split('.'), mid[1].split('.')
