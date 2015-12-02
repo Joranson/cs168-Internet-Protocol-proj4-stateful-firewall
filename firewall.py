@@ -47,7 +47,7 @@ class Firewall:
         with open('geoipdb.txt') as f:
             self.geoDb = f.readlines()
 
-        ## create a dictionary to store {unique_id: http_payload} for reassembly TCP
+        ## create a dictionary to store {unique_id: tcp_payload} for reassembly TCP
         self.reassembly = {}
         ## create a dictionary to store {unique_id: expected_seq} for reassembly TCP
         self.expected_seq = {}
@@ -193,68 +193,43 @@ class Firewall:
                     print "destination ip address is", dest_addr
                     print "source port is", source_port
                     print "destination port is", dest_port
-
-                if (source_port==80 and pkt_dir==PKT_DIR_INCOMING) or (dest_port==80 and pkt_dir==PKT_DIR_OUTGOING):    ## HTTP connection
-                    tcp_header_len = struct.unpack("!B", pkt[ip_header_len+12])[0]>>4 *4  ## tcp header size in Byte
-                    ip_total_len = struct.unpack("!H", pkt[2:4])[0]
-                    if ip_total_len>ip_header_len+tcp_header_len:  ## there is payload related to HTTP connection
-                        http_payload_len = ip_total_len-ip_header_len-tcp_header_len
-                        http_payload = pkt[ip_header_len+tcp_header_len:]
-                        seq_num = struct.unpack("!L",pkt[ip_header_len+4:ip_header_len+8])[0]
-                        expected_next_seq_num = seq_num+http_payload_len
-                        unique_id = (source_addr, dest_addr, source_port, dest_port)
-                        if unique_id in self.reassembly:
-                            if seq_num<=self.expected_seq[unique_id]:   # ignore forward out-of-order cases
-                                self.reassembly[unique_id]+=http_payload
-                                self.expected_seq[unique_id] = expected_next_seq_num
-                                if self.crlf in self.reassembly[unique_id]:  # already parsed http header
-                                    retrieveInfo = self.retrieveInfo(self.reassembly[unique_id])    ##TODO: need to implement this method
-                                    self.contentLength[unique_id] = retrieveInfo["content-length"] # if no content-length field, set it to -1
-                                    if pkt_dir==PKT_DIR_OUTGOING:   # http request
-                                        self.http_request_info[unique_id] = retrieveInfo
-                                    else:                           # http response
-                                        # retrieve http request info
-                                        reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
-                                        http_request_info = self.http_request_info[reverse_unique_id]
-                                        self.log(http_request_info, retrieveInfo) ##TODO: need to implement this method
-                                if unique_id not in self.contentLength:
-                                    self.contentLength[unique_id] = float("inf") # set it to be infinity, waiting retrieveInfo to update itself
-
-                                if self.contentLength[unique_id]<=len(self.reassembly[unique_id]):
-                                    self.reassembly[unique_id]=""       # reset so next time search crlf split would also work for one of the next response/request pair
-                                    self.contentLength[unique_id] = float("inf")
-                        else:
-                            if seq_num==1:      # after handshake since handshake stages have no payload
-                                self.reassembly[unique_id] = http_payload
-                                self.expected_seq[unique_id] = expected_next_seq_num
-                                if self.crlf in self.reassembly[unique_id]:  # already parsed http header
-                                    retrieveInfo = self.retrieveInfo(self.reassembly[unique_id])
-                                    self.contentLength[unique_id] = retrieveInfo["content-length"] # if no content-length field, set it to -1
-                                    if pkt_dir==PKT_DIR_OUTGOING:   # http request
-                                        self.http_request_info[unique_id] = retrieveInfo
-                                    else:                           # http response
-                                        # retrieve http request info
-                                        reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
-                                        http_request_info = self.http_request_info[reverse_unique_id]
-                                        self.log(http_request_info, retrieveInfo) ##TODO: need to implement this method
-
-                                if unique_id not in self.contentLength:
-                                    self.contentLength[unique_id] = float("inf") # set it to be infinity, waiting retrieveInfo to update itself
-
-                                if self.contentLength[unique_id]<=len(self.reassembly[unique_id]):
-                                    self.reassembly[unique_id]=""       # reset so next time search crlf split would also work for one of the next response/request pair
-                                    self.contentLength[unique_id] = float("inf")
-
-                elif pkt_dir == PKT_DIR_INCOMING:
+                if pkt_dir == PKT_DIR_INCOMING:
                     if self.debug:
                         print "incoming packet"
                     pkt_info['external_port'] = source_port
                     pkt_info['external_ip'] = source_addr
-                    matchRes = self.proIpPortMatching(pkt_info)
+                    matchRes = self.proIpPortMatching(pkt_info)     # check TCP deny
                     if self.debug:
                         print "+++++++++++++++++++incoming packet rule matching result says,", matchRes
                     if matchRes == "pass":
-                        self.iface_int.send_ip_packet(pkt)
+                        if pkt_info['external_port']==80:    ## handle logging here if external port is 80
+                            tcp_header_len = struct.unpack("!B", pkt[ip_header_len+12])[0]>>4 *4  ## tcp header size in Byte
+                            ip_total_len = struct.unpack("!H", pkt[2:4])[0]
+                            if ip_total_len>ip_header_len+tcp_header_len:  ## there is payload related to TCP connection, which means there is http texts inside
+                                tcp_payload_len = ip_total_len-ip_header_len-tcp_header_len
+                                tcp_payload = pkt[ip_header_len+tcp_header_len:]
+                                seq_num = struct.unpack("!L",pkt[ip_header_len+4:ip_header_len+8])[0]
+                                expected_next_seq_num = seq_num+tcp_payload_len
+                                unique_id = (source_addr, dest_addr, source_port, dest_port)
+                                if seq_num==1 or (unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]): # pass pkt
+                                    self.iface_int.send_ip_packet(pkt)
+                                    if seq_num<=1 or (unique_id in self.expected_seq and seq_num==self.expected_seq[unique_id]): # actual reassembling
+                                        self.expected_seq[unique_id] = expected_next_seq_num
+                                        if unique_id in self.reassembly:
+                                            self.reassembly[unique_id]+=tcp_payload
+                                        else:
+                                            self.reassembly[unique_id]=tcp_payload
+                                        if self.crlf in self.reassembly[unique_id]:
+                                            retrieveInfo = self.retrieveInfo(self.reassembly[unique_id])  # this is an INCOMING pkt--> response msg
+                                            reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
+                                            http_request_info = self.http_request_info[reverse_unique_id]
+                                            if self.domainMatching(http_request_info):  # host/ip matches log rule
+                                                self.log(http_request_info, retrieveInfo)
+                                            self.reassembly[unique_id] = ""   # reset to empty string for next http header
+                                else:
+                                    pass                # drop forward out-of-order http packet
+                        else:  ## normal tcp packet, just send
+                            self.iface_int.send_ip_packet(pkt)
                     elif matchRes == "deny":
                         if self.debug:
                             print "deny this packet"
@@ -270,7 +245,31 @@ class Firewall:
                     if self.debug:
                         print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
                     if matchRes == "pass":
-                        self.iface_ext.send_ip_packet(pkt)
+                        if pkt_info['external_port']==80:    ## handle logging here if external port is 80
+                            tcp_header_len = struct.unpack("!B", pkt[ip_header_len+12])[0]>>4 *4  ## tcp header size in Byte
+                            ip_total_len = struct.unpack("!H", pkt[2:4])[0]
+                            if ip_total_len>ip_header_len+tcp_header_len:  ## there is payload related to TCP connection, which means there is http texts inside
+                                tcp_payload_len = ip_total_len-ip_header_len-tcp_header_len
+                                tcp_payload = pkt[ip_header_len+tcp_header_len:]
+                                seq_num = struct.unpack("!L",pkt[ip_header_len+4:ip_header_len+8])[0]
+                                expected_next_seq_num = seq_num+tcp_payload_len
+                                unique_id = (source_addr, dest_addr, source_port, dest_port)
+                                if seq_num<=1 or (unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]): # pass pkt
+                                    self.iface_ext.send_ip_packet(pkt)
+                                    if seq_num==1 or (unique_id in self.expected_seq and seq_num==self.expected_seq[unique_id]): # actual reassembling
+                                        self.expected_seq[unique_id] = expected_next_seq_num
+                                        if unique_id in self.reassembly:
+                                            self.reassembly[unique_id]+=tcp_payload
+                                        else:
+                                            self.reassembly[unique_id]=tcp_payload
+                                        if self.crlf in self.reassembly[unique_id]:
+                                            retrieveInfo = self.retrieveInfo(self.reassembly[unique_id])  # this is an OUTGOING pkt--> request msg
+                                            self.http_request_info[unique_id] = retrieveInfo
+                                            self.reassembly[unique_id] = ""   # reset to empty string for next http header
+                                else:
+                                    pass                # drop forward out-of-order http packet
+                        else:               ## normal tcp packet, just send
+                            self.iface_ext.send_ip_packet(pkt)
                     elif matchRes == "deny":
                         if self.debug:
                             print "deny this packet"
@@ -643,6 +642,9 @@ class Firewall:
         pass
 
     def log(self, http_request_info, http_response_info):
+        pass
+
+    def domainMatching(self, retrieveInfo):
         pass
 
 
