@@ -223,7 +223,7 @@ class Firewall:
                                             retrieveInfo = self.retrieveInfo(self.reassembly[unique_id])  # this is an INCOMING pkt--> response msg
                                             reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
                                             http_request_info = self.http_request_info[reverse_unique_id]
-                                            if self.domainMatching(http_request_info):  # host/ip matches log rule
+                                            if self.hostMatching(http_request_info):  # host/ip matches log rule
                                                 self.log(http_request_info, retrieveInfo)
                                             self.reassembly[unique_id] = ""   # reset to empty string for next http header
                                 else:
@@ -635,17 +635,62 @@ class Firewall:
                 j+=1
         return dnsName.lower(), j
 
-    def retrieveInfo(self, payload):
+    def hostMatching(self, retrieveInfo):
+        if type(retrieveInfo["host"])==str: ## actual hostname matching, can use domainMatching(domainName)
+            hostname = retrieveInfo["host"]
+            addr_lst = hostname.split(".")
+            for j in range(1,len(self.rules)+1):
+                rule = self.rules[-j]
+                if rule[0]=="log":
+                    logRule = rule
+                    logAddr_lst = logRule[2].split(".")
+                    matched = True
+                    if len(logAddr_lst)>len(addr_lst):
+                        continue
+                    else:
+                        for i in range(1,len(logRule)+1):
+                            if logAddr_lst[-i]=="*":
+                                break
+                            elif logRule[-i]!=addr_lst[-i]:
+                                matched = False
+                                break
+                        if matched:
+                            return True
+            return False
+        else:                               ## IPv4 matching, TODO: remeber to convert IPv4 dot quad into integer first inside retrieveInfo
+            ipv4_int = retrieveInfo["host"]
+            for j in range(1,len(self.rules)+1):
+                rule = self.rules[-j]
+                if rule[0]=="log":
+                    isIPv4 = True
+                    logAddr_lst = rule[2].split(".")
+                    for i in logAddr_lst:
+                        if not i.isdigit():
+                            isIPv4 = False
+                            break
+                    if rule[0]=="log" and isIPv4:
+                        rule_int = self.dotQuadToInt(rule[2])
+                        if ipv4_int!=rule_int:
+                            continue
+                        else:
+                            return True
+            return False
+
+    def retrieveInfo(self, payload): ## TODO: implement this
         """
         :rtype: a dictionary specifying host_name, method, path, version, status_code, object_size
+        steps:
+        1) locate the crlf inside the payload
+        2) from crlf, go backwards to parse information
+        Be careful about the cases that some of the fields do not exist, need default value (content-length) or alternative (IPv4)
         """
         pass
 
-    def log(self, http_request_info, http_response_info):
+    def log(self, http_request_info, http_response_info): ## TODO: implement this
+
         pass
 
-    def domainMatching(self, retrieveInfo):
-        pass
+
 
 
 
