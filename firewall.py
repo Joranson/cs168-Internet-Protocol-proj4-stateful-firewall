@@ -210,7 +210,7 @@ class Firewall:
                             tcp_payload = pkt[ip_header_len+tcp_header_len:]
                             seq_num = struct.unpack("!L",pkt[ip_header_len+4:ip_header_len+8])[0]
                             expected_next_seq_num = seq_num+tcp_payload_len
-                            unique_id = (source_addr, dest_addr, source_port, dest_port)
+                            unique_id = (self.dotQuadToInt(source_addr), self.dotQuadToInt(dest_addr), source_port, dest_port)
                             if seq_num==0 or (unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]): # pass pkt
                                 self.iface_int.send_ip_packet(pkt)
                                 if seq_num==0 and (unique_id not in self.expected_seq):
@@ -255,7 +255,7 @@ class Firewall:
                             tcp_payload = pkt[ip_header_len+tcp_header_len:]
                             seq_num = struct.unpack("!L",pkt[ip_header_len+4:ip_header_len+8])[0]
                             expected_next_seq_num = seq_num+tcp_payload_len
-                            unique_id = (source_addr, dest_addr, source_port, dest_port)
+                            unique_id = (self.dotQuadToInt(source_addr), self.dotQuadToInt(dest_addr), source_port, dest_port)
                             if seq_num==0 or (unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]): # pass pkt
                                 self.iface_ext.send_ip_packet(pkt)
                                 if seq_num==0 and (unique_id not in self.expected_seq):
@@ -688,12 +688,33 @@ class Firewall:
         2) from crlf, go backwards to parse information
         Be careful about the cases that some of the fields do not exist, need default value (content-length) or alternative (IPv4)
         """
-        pass
+        http_string = ""
+        for i in payload:
+            http_string += struct.unpack('!B', i)
 
-    def log(self, http_request_info, http_response_info): ## TODO: implement this
+        req_str, res_str = http_string.split(self.crlf)[:2]
+        req_str += "\r\n"
+        res_str += "\r\n"
+        result_dict = {}
+        host = re.findall(r"Host: (?P<value>.*?)\r\n", req_str)
+        result_dict["host"] = (host and host[0].rstrip())  or ip_addr
+        result_dict["method"] = req_str.split()[0]
+        result_dict["path"] = req_str.split()[1]
+        result_dict["version"] = req_str.split()[2]
+        result_dict["status_code"] = res_str.split()[1]
+        obj_size = re.findall(r"Content-Length: (?P<value>.*?)\r\n", res_str)
+        result_dict["object_size"] = (obj_size and obj_size[0].rstrip()) or "-1"
+        
+        return result_dict
 
-        pass
+    def log(self, info):
+        # info is a dictionary with all logging info pairs
+        f = open('http.log', 'a')
 
+        write_str = info["host"]+" "+info["method"]+" "+info["path"]+" "+info["version"]+" "+info["status_code"]+" "+info["object_s\
+ize"]+"\n"
+        print "string to write", write_str
+        f.write(write_str)
 
 
 
