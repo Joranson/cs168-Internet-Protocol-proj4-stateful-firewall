@@ -203,7 +203,7 @@ class Firewall:
                         print "+++++++++++++++++++incoming packet rule matching result says,", matchRes
                     if matchRes == "pass":
                         if pkt_info['external_port']==80:    ## handle logging here if external port is 80
-                            tcp_header_len = struct.unpack("!B", pkt[ip_header_len+12])[0]>>4 *4  ## tcp header size in Byte
+                            tcp_header_len = (struct.unpack("!B", pkt[ip_header_len+12])[0]>>4) *4  ## tcp header size in Byte
                             ip_total_len = struct.unpack("!H", pkt[2:4])[0]
                             # if ip_total_len>ip_header_len+tcp_header_len:  ## there is payload related to TCP connection, which means there is http texts inside
                             tcp_payload_len = ip_total_len-ip_header_len-tcp_header_len
@@ -211,10 +211,12 @@ class Firewall:
                             seq_num = struct.unpack("!L",pkt[ip_header_len+4:ip_header_len+8])[0]
                             expected_next_seq_num = seq_num+tcp_payload_len
                             unique_id = (self.dotQuadToInt(source_addr), self.dotQuadToInt(dest_addr), source_port, dest_port)
-                            if seq_num==0 or (unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]): # pass pkt
+                            if unique_id not in self.expected_seq or (unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]): # pass pkt
                                 self.iface_int.send_ip_packet(pkt)
-                                if seq_num==0 and (unique_id not in self.expected_seq):
-                                    self.expected_seq[unique_id] = 1  # special case for handshake, only allow once
+                                if unique_id not in self.expected_seq:
+                                    isSynSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0]>>1)&1
+                                    if isSynSet:
+                                        self.expected_seq[unique_id] = seq_num+1  # special case for handshake, only allow once
                                 elif unique_id in self.expected_seq and seq_num==self.expected_seq[unique_id]: # actual reassembling
                                     self.expected_seq[unique_id] = expected_next_seq_num
                                     if unique_id in self.reassembly:
@@ -222,6 +224,7 @@ class Firewall:
                                     else:
                                         self.reassembly[unique_id]=tcp_payload
                                     if self.crlf in self.reassembly[unique_id]:
+                                        print "##############INGOING################", self.reassembly[unique_id]
                                         retrieveInfo = self.retrieveInfo(self.reassembly[unique_id])  # this is an INCOMING pkt--> response msg
                                         reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
                                         http_request_info = self.http_request_info[reverse_unique_id]
@@ -248,7 +251,7 @@ class Firewall:
                         print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
                     if matchRes == "pass":
                         if pkt_info['external_port']==80:    ## handle logging here if external port is 80
-                            tcp_header_len = struct.unpack("!B", pkt[ip_header_len+12])[0]>>4 *4  ## tcp header size in Byte
+                            tcp_header_len = (struct.unpack("!B", pkt[ip_header_len+12])[0]>>4) *4  ## tcp header size in Byte
                             ip_total_len = struct.unpack("!H", pkt[2:4])[0]
                             # if ip_total_len>ip_header_len+tcp_header_len:  ## there is payload related to TCP connection, which means there is http texts inside
                             tcp_payload_len = ip_total_len-ip_header_len-tcp_header_len
@@ -256,10 +259,12 @@ class Firewall:
                             seq_num = struct.unpack("!L",pkt[ip_header_len+4:ip_header_len+8])[0]
                             expected_next_seq_num = seq_num+tcp_payload_len
                             unique_id = (self.dotQuadToInt(source_addr), self.dotQuadToInt(dest_addr), source_port, dest_port)
-                            if seq_num==0 or (unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]): # pass pkt
+                            if unique_id not in self.expected_seq or (unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]): # pass pkt
                                 self.iface_ext.send_ip_packet(pkt)
-                                if seq_num==0 and (unique_id not in self.expected_seq):
-                                    self.expected_seq[unique_id] = 1  # special case for handshake, only allow once
+                                if unique_id not in self.expected_seq:
+                                    isSynSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0]>>1)&1
+                                    if isSynSet:
+                                        self.expected_seq[unique_id] = seq_num+1  # special case for handshake, only allow once
                                 elif unique_id in self.expected_seq and seq_num==self.expected_seq[unique_id]: # actual reassembling
                                     self.expected_seq[unique_id] = expected_next_seq_num
                                     if unique_id in self.reassembly:
@@ -267,6 +272,7 @@ class Firewall:
                                     else:
                                         self.reassembly[unique_id]=tcp_payload
                                     if self.crlf in self.reassembly[unique_id]:
+                                        print "&&&&&&&&&&&&&&&&&&&&&&&&OUTGOING&&&&&&&&&&&&&&&&&&&&&&&&", self.reassembly[unique_id]
                                         retrieveInfo = self.retrieveInfo(self.reassembly[unique_id])  # this is an OUTGOING pkt--> request msg
                                         self.http_request_info[unique_id] = retrieveInfo
                                         self.reassembly[unique_id] = ""   # reset to empty string for next http header
@@ -640,45 +646,46 @@ class Firewall:
         return dnsName.lower(), j
 
     def hostMatching(self, retrieveInfo):
-        if type(retrieveInfo["host"])==str: ## actual hostname matching, can use domainMatching(domainName)
-            hostname = retrieveInfo["host"]
-            addr_lst = hostname.split(".")
-            for j in range(1,len(self.rules)+1):
-                rule = self.rules[-j]
-                if rule[0]=="log":
-                    logRule = rule
-                    logAddr_lst = logRule[2].split(".")
-                    matched = True
-                    if len(logAddr_lst)>len(addr_lst):
-                        continue
-                    else:
-                        for i in range(1,len(logRule)+1):
-                            if logAddr_lst[-i]=="*":
-                                break
-                            elif logRule[-i]!=addr_lst[-i]:
-                                matched = False
-                                break
-                        if matched:
-                            return True
-            return False
-        else:                               ## IPv4 matching, TODO: remeber to convert IPv4 dot quad into integer first inside retrieveInfo
-            ipv4_int = retrieveInfo["host"]
-            for j in range(1,len(self.rules)+1):
-                rule = self.rules[-j]
-                if rule[0]=="log":
-                    isIPv4 = True
-                    logAddr_lst = rule[2].split(".")
-                    for i in logAddr_lst:
-                        if not i.isdigit():
-                            isIPv4 = False
-                            break
-                    if rule[0]=="log" and isIPv4:
-                        rule_int = self.dotQuadToInt(rule[2])
-                        if ipv4_int!=rule_int:
-                            continue
-                        else:
-                            return True
-            return False
+        return True
+        # if type(retrieveInfo["host"])==str: ## actual hostname matching, can use domainMatching(domainName)
+        #     hostname = retrieveInfo["host"]
+        #     addr_lst = hostname.split(".")
+        #     for j in range(1,len(self.rules)+1):
+        #         rule = self.rules[-j]
+        #         if rule[0]=="log":
+        #             logRule = rule
+        #             logAddr_lst = logRule[2].split(".")
+        #             matched = True
+        #             if len(logAddr_lst)>len(addr_lst):
+        #                 continue
+        #             else:
+        #                 for i in range(1,len(logRule)+1):
+        #                     if logAddr_lst[-i]=="*":
+        #                         break
+        #                     elif logRule[-i]!=addr_lst[-i]:
+        #                         matched = False
+        #                         break
+        #                 if matched:
+        #                     return True
+        #     return False
+        # else:                               ## IPv4 matching, TODO: remeber to convert IPv4 dot quad into integer first inside retrieveInfo
+        #     ipv4_int = retrieveInfo["host"]
+        #     for j in range(1,len(self.rules)+1):
+        #         rule = self.rules[-j]
+        #         if rule[0]=="log":
+        #             isIPv4 = True
+        #             logAddr_lst = rule[2].split(".")
+        #             for i in logAddr_lst:
+        #                 if not i.isdigit():
+        #                     isIPv4 = False
+        #                     break
+        #             if rule[0]=="log" and isIPv4:
+        #                 rule_int = self.dotQuadToInt(rule[2])
+        #                 if ipv4_int!=rule_int:
+        #                     continue
+        #                 else:
+        #                     return True
+        #     return False
 
     def retrieveInfo(self, payload): ## TODO: implement this
         """
@@ -688,33 +695,35 @@ class Firewall:
         2) from crlf, go backwards to parse information
         Be careful about the cases that some of the fields do not exist, need default value (content-length) or alternative (IPv4)
         """
-        http_string = ""
-        for i in payload:
-            http_string += struct.unpack('!B', i)
+        # http_string = ""
+        # for i in payload:
+        #     http_string += struct.unpack('!B', i)
+        #
+        # req_str, res_str = http_string.split(self.crlf)[:2]
+        # req_str += "\r\n"
+        # res_str += "\r\n"
+        # result_dict = {}
+        # host = re.findall(r"Host: (?P<value>.*?)\r\n", req_str)
+        # result_dict["host"] = (host and host[0].rstrip())  or ip_addr
+        # result_dict["method"] = req_str.split()[0]
+        # result_dict["path"] = req_str.split()[1]
+        # result_dict["version"] = req_str.split()[2]
+        # result_dict["status_code"] = res_str.split()[1]
+        # obj_size = re.findall(r"Content-Length: (?P<value>.*?)\r\n", res_str)
+        # result_dict["object_size"] = (obj_size and obj_size[0].rstrip()) or "-1"
+        #
+        # return result_dict
+        pass
 
-        req_str, res_str = http_string.split(self.crlf)[:2]
-        req_str += "\r\n"
-        res_str += "\r\n"
-        result_dict = {}
-        host = re.findall(r"Host: (?P<value>.*?)\r\n", req_str)
-        result_dict["host"] = (host and host[0].rstrip())  or ip_addr
-        result_dict["method"] = req_str.split()[0]
-        result_dict["path"] = req_str.split()[1]
-        result_dict["version"] = req_str.split()[2]
-        result_dict["status_code"] = res_str.split()[1]
-        obj_size = re.findall(r"Content-Length: (?P<value>.*?)\r\n", res_str)
-        result_dict["object_size"] = (obj_size and obj_size[0].rstrip()) or "-1"
-        
-        return result_dict
-
-    def log(self, info):
+    def log(self, requestInfo, responseInfo):
         # info is a dictionary with all logging info pairs
-        f = open('http.log', 'a')
-
-        write_str = info["host"]+" "+info["method"]+" "+info["path"]+" "+info["version"]+" "+info["status_code"]+" "+info["object_s\
-ize"]+"\n"
-        print "string to write", write_str
-        f.write(write_str)
+#         f = open('http.log', 'a')
+#
+#         write_str = info["host"]+" "+info["method"]+" "+info["path"]+" "+info["version"]+" "+info["status_code"]+" "+info["object_s\
+# ize"]+"\n"
+#         print "string to write", write_str
+#         f.write(write_str)
+        pass
 
 
 

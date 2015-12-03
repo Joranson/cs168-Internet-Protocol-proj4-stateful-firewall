@@ -33,3 +33,5 @@ def test():
     info = retrieveInfo(httpReq+httpRes, "1.1.1.1") 
     print info
     log(info)
+
+test()
