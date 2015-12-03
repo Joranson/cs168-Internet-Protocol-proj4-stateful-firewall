@@ -680,8 +680,9 @@ class Firewall:
                             return True
             return False
 
-    def retrieveInfo(self, payload): ## TODO: implement this
+    def retrieveInfo(self, payload, is_request_http): ## TODO: implement this
         """
+        argument: is_request_http is a boolean that is true if the info to be extracted is an http request payload
         :rtype: a dictionary specifying host_name, method, path, version, status_code, object_size
         steps:
         1) locate the crlf inside the payload
@@ -692,27 +693,27 @@ class Firewall:
         for i in payload:
             http_string += struct.unpack('!B', i)
 
-        req_str, res_str = http_string.split(self.crlf)[:2]
-        req_str += "\r\n"
-        res_str += "\r\n"
-        result_dict = {}
-        host = re.findall(r"Host: (?P<value>.*?)\r\n", req_str)
-        result_dict["host"] = (host and host[0].rstrip())  or ip_addr
-        result_dict["method"] = req_str.split()[0]
-        result_dict["path"] = req_str.split()[1]
-        result_dict["version"] = req_str.split()[2]
-        result_dict["status_code"] = res_str.split()[1]
-        obj_size = re.findall(r"Content-Length: (?P<value>.*?)\r\n", res_str)
-        result_dict["object_size"] = (obj_size and obj_size[0].rstrip()) or "-1"
+        if if_request_http:
+            # set req_str to the http part using crlf
+            req_str = "\r\n"
+            host = re.findall(r"Host: (?P<value>.*?)\r\n", req_str)
+            result_dict["host"] = (host and host[0].rstrip())  or ip_addr
+            result_dict["method"] = req_str.split()[0]
+            result_dict["path"] = req_str.split()[1]
+            result_dict["version"] = req_str.split()[2]
+        else:
+            seq_str = "\r\n"
+            result_dict["status_code"] = res_str.split()[1]
+            obj_size = re.findall(r"Content-Length: (?P<value>.*?)\r\n", res_str)
+            result_dict["object_size"] = (obj_size and obj_size[0].rstrip()) or "-1"
         
         return result_dict
 
-    def log(self, info):
+    def log(self, request_info, response_info):
         # info is a dictionary with all logging info pairs
         f = open('http.log', 'a')
 
-        write_str = info["host"]+" "+info["method"]+" "+info["path"]+" "+info["version"]+" "+info["status_code"]+" "+info["object_s\
-ize"]+"\n"
+        write_str = request_info["host"]+" "+request_info["method"]+" "+request_info["path"]+" "+request_info["version"]+" "+response_info["status_code"]+" "+response_info["object_size"]+"\n"
         print "string to write", write_str
         f.write(write_str)
 
