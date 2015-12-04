@@ -206,38 +206,41 @@ class Firewall:
                         if pkt_info['external_port']==80:    ## handle logging here if external port is 80
                             tcp_header_len = (struct.unpack("!B", pkt[ip_header_len+12])[0]>>4) *4  ## tcp header size in Byte
                             ip_total_len = struct.unpack("!H", pkt[2:4])[0]
-                            # if ip_total_len>ip_header_len+tcp_header_len:  ## there is payload related to TCP connection, which means there is http texts inside
                             tcp_payload_len = ip_total_len-ip_header_len-tcp_header_len
                             tcp_payload = pkt[ip_header_len+tcp_header_len:]
                             seq_num = struct.unpack("!L",pkt[ip_header_len+4:ip_header_len+8])[0]
                             expected_next_seq_num = seq_num+tcp_payload_len
                             unique_id = (self.dotQuadToInt(source_addr), self.dotQuadToInt(dest_addr), source_port, dest_port)
-                            if unique_id not in self.expected_seq or (unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]): # pass pkt
-                                self.iface_int.send_ip_packet(pkt)
+                            if tcp_payload_len>0:
+                                if unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]: # pass pkt
+                                    self.iface_int.send_ip_packet(pkt)
+                                    if unique_id in self.expected_seq and seq_num==self.expected_seq[unique_id]: # actual reassembling
+                                        self.expected_seq[unique_id] = expected_next_seq_num
+                                        if unique_id not in self.parsedHeader or self.parsedHeader[unique_id]==False:
+                                            if unique_id in self.reassembly:
+                                                self.reassembly[unique_id]+=tcp_payload
+                                            else:
+                                                self.reassembly[unique_id]=tcp_payload
+                                        if self.crlf in self.reassembly[unique_id]:
+                                            print "##############INGOING################", self.reassembly[unique_id]
+                                            retrieveInfo = self.retrieveInfo(self.reassembly[unique_id], False, pkt_info['external_ip'])  # this is an INCOMING pkt--> response msg
+                                            print "---------------> retrieved info: ", retrieveInfo
+                                            reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
+                                            self.parsedHeader[unique_id] = True     ## stop adding http body data into self.reassembly
+                                            self.parsedHeader[reverse_unique_id] = False    ## now okay to receive http request header
+                                            http_request_info = self.http_request_info[reverse_unique_id]
+                                            if self.hostMatching(http_request_info):  # host/ip matches log rule
+                                                self.log(http_request_info, retrieveInfo)
+                                            self.reassembly[unique_id] = ""   # reset to empty string for next http header
+                                else:
+                                    pass                # drop forward out-of-order http packet
+                            else:   ## zero payload length
                                 if unique_id not in self.expected_seq:
                                     isSynSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0]>>1)&1
-                                    if isSynSet:
-                                        self.expected_seq[unique_id] = seq_num+1  # special case for handshake, only allow once
-                                elif unique_id in self.expected_seq and seq_num==self.expected_seq[unique_id]: # actual reassembling
-                                    self.expected_seq[unique_id] = expected_next_seq_num
-                                    if unique_id not in self.parsedHeader or self.parsedHeader[unique_id]==False:
-                                        if unique_id in self.reassembly:
-                                            self.reassembly[unique_id]+=tcp_payload
-                                        else:
-                                            self.reassembly[unique_id]=tcp_payload
-                                    if self.crlf in self.reassembly[unique_id]:
-                                        print "##############INGOING################", self.reassembly[unique_id]
-                                        retrieveInfo = self.retrieveInfo(self.reassembly[unique_id], False, pkt_info['external_ip'])  # this is an INCOMING pkt--> response msg
-                                        print "---------------> retrieved info: ", retrieveInfo
-                                        reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
-                                        self.parsedHeader[unique_id] = True     ## stop adding http body data into self.reassembly
-                                        self.parsedHeader[reverse_unique_id] = False    ## now okay to receive http request header
-                                        http_request_info = self.http_request_info[reverse_unique_id]
-                                        if self.hostMatching(http_request_info):  # host/ip matches log rule
-                                            self.log(http_request_info, retrieveInfo)
-                                        self.reassembly[unique_id] = ""   # reset to empty string for next http header
-                            else:
-                                pass                # drop forward out-of-order http packet
+                                    isFinSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0])&1
+                                    if isSynSet or isFinSet:
+                                        self.expected_seq[unique_id] = seq_num+1  # special case for handshake
+                                        self.iface_int.send_ip_packet(pkt)
                         else:  ## normal tcp packet, just send
                             self.iface_int.send_ip_packet(pkt)
                     elif matchRes == "deny":
@@ -264,30 +267,38 @@ class Firewall:
                             seq_num = struct.unpack("!L",pkt[ip_header_len+4:ip_header_len+8])[0]
                             expected_next_seq_num = seq_num+tcp_payload_len
                             unique_id = (self.dotQuadToInt(source_addr), self.dotQuadToInt(dest_addr), source_port, dest_port)
-                            if unique_id not in self.expected_seq or (unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]): # pass pkt
-                                self.iface_ext.send_ip_packet(pkt)
+                            if tcp_payload_len>0:
+                                if unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]: # pass pkt
+                                    self.iface_ext.send_ip_packet(pkt)
+                                    if unique_id not in self.expected_seq:
+                                        isSynSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0]>>1)&1
+                                        if isSynSet:
+                                            self.expected_seq[unique_id] = seq_num+1  # special case for handshake, only allow once
+                                    elif unique_id in self.expected_seq and seq_num==self.expected_seq[unique_id]: # actual reassembling
+                                        self.expected_seq[unique_id] = expected_next_seq_num
+                                        if unique_id not in self.parsedHeader or self.parsedHeader[unique_id]==False:
+                                            if unique_id in self.reassembly:
+                                                self.reassembly[unique_id]+=tcp_payload
+                                            else:
+                                                self.reassembly[unique_id]=tcp_payload
+                                        if self.crlf in self.reassembly[unique_id]:
+                                            print "----------------------OUTGOING------------------------", self.reassembly[unique_id]
+                                            retrieveInfo = self.retrieveInfo(self.reassembly[unique_id], True, pkt_info['external_ip'])  # this is an OUTGOING pkt--> request msg
+                                            print "---------------> retrieved info: ", retrieveInfo
+                                            reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
+                                            self.parsedHeader[unique_id] = True     ## stop adding http body data into self.reassembly
+                                            self.parsedHeader[reverse_unique_id] = False    ## now okay to receive http response header
+                                            self.http_request_info[unique_id] = retrieveInfo
+                                            self.reassembly[unique_id] = ""   # reset to empty string for next http header
+                                else:
+                                    pass                # drop forward out-of-order http packet
+                            else:
                                 if unique_id not in self.expected_seq:
                                     isSynSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0]>>1)&1
-                                    if isSynSet:
-                                        self.expected_seq[unique_id] = seq_num+1  # special case for handshake, only allow once
-                                elif unique_id in self.expected_seq and seq_num==self.expected_seq[unique_id]: # actual reassembling
-                                    self.expected_seq[unique_id] = expected_next_seq_num
-                                    if unique_id not in self.parsedHeader or self.parsedHeader[unique_id]==False:
-                                        if unique_id in self.reassembly:
-                                            self.reassembly[unique_id]+=tcp_payload
-                                        else:
-                                            self.reassembly[unique_id]=tcp_payload
-                                    if self.crlf in self.reassembly[unique_id]:
-                                        print "----------------------OUTGOING------------------------", self.reassembly[unique_id]
-                                        retrieveInfo = self.retrieveInfo(self.reassembly[unique_id], True, pkt_info['external_ip'])  # this is an OUTGOING pkt--> request msg
-                                        print "---------------> retrieved info: ", retrieveInfo
-                                        reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
-                                        self.parsedHeader[unique_id] = True     ## stop adding http body data into self.reassembly
-                                        self.parsedHeader[reverse_unique_id] = False    ## now okay to receive http response header
-                                        self.http_request_info[unique_id] = retrieveInfo
-                                        self.reassembly[unique_id] = ""   # reset to empty string for next http header
-                            else:
-                                pass                # drop forward out-of-order http packet
+                                    isFinSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0])&1
+                                    if isSynSet or isFinSet:
+                                        self.expected_seq[unique_id] = seq_num+1  # special case for handshake
+                                        self.iface_ext.send_ip_packet(pkt)
                         else:               ## normal tcp packet, just send
                             self.iface_ext.send_ip_packet(pkt)
                     elif matchRes == "deny":
