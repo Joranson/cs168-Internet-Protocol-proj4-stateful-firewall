@@ -18,7 +18,7 @@ class Firewall:
         self.debug = False
 
         self.ipv4ProHash = {1:'icmp', 6:'tcp', 17:'udp'}
-        
+
         self.RawRules = []
         with open(config['rule']) as f:
             self.RawRules = f.readlines()
@@ -42,7 +42,7 @@ class Firewall:
             for i in self.rules:
                 print i
                 print "Initialization finished"
-                
+
         ## Load the GeoIP DB  --  no GeoIP for Project 4. //TODO: clean everything related to GeoIp
         self.geoDb = []
         with open('geoipdb.txt') as f:
@@ -69,7 +69,7 @@ class Firewall:
         ip_flags_frag_offset = 0
         ip_ttl_proto = (1 << 8) + ip_protocol
         ip_checksum = 0
-        
+
         new_pkt = struct.pack('!B', ip_version_ihl) + struct.pack('!B', ip_tos) + struct.pack('!H', ip_total_len) + struct.pack('!H', ip_iden) + struct.pack('!H', ip_flags_frag_offset)+struct.pack('!H', ip_ttl_proto)+struct.pack('!H', ip_checksum)+source_addr+dest_addr
 
         if self.debug:
@@ -85,7 +85,7 @@ class Firewall:
         while all_sum > (2**16 - 1):
             all_sum = all_sum % (2**16) + (all_sum >> 16)
         computed_checksum = all_sum ^ (2**16 - 1)
-        
+
         new_pkt = new_pkt[:10] + struct.pack('!H', computed_checksum) + new_pkt[12:]
         return new_pkt
 
@@ -135,7 +135,7 @@ class Firewall:
         tcp_window = 0
         tcp_checksum = 0
         tcp_urgent_pointer = 0
-        
+
         tcp_header = source_port + dest_port + struct.pack('!L', tcp_seq_no) + ack_no + struct.pack('!H', tcp_offset_res_flags) + struct.pack('!H', tcp_window) + struct.pack('!H', tcp_checksum) + struct.pack('!H', tcp_urgent_pointer)
         psuedo_tcp_header = source_addr + dest_addr + struct.pack('!H', ip_proto) + struct.pack('!H', tcp_header_len) + tcp_header
 
@@ -144,7 +144,7 @@ class Firewall:
             print "tcp flag is", struct.unpack('!H', psuedo_tcp_header[24:26])[0] & 15
             print "tcp source port is", struct.unpack('!H', psuedo_tcp_header[12:14])[0]
             print "tcp destination port is", struct.unpack('!H', psuedo_tcp_header[14:16])[0]
-        
+
         # compute tcp checksum
         all_sum = 0
         for i in range(15):
@@ -174,7 +174,7 @@ class Firewall:
             print "header version is", ip_version, "and header length is", ip_header_len
             print "the total length of packet is", struct.unpack('!H', pkt[2:4])[0]
             print "checksum is", struct.unpack('!H', pkt[10:12])[0]
-            
+
         source_addr_str = pkt[12:16]
         source_addr = self.intToDotQuad(struct.unpack('!L', source_addr_str)[0])
         dest_addr_str = pkt[16:20]
@@ -240,6 +240,8 @@ class Firewall:
                                 if isSynSet or isFinSet:
                                     self.expected_seq[unique_id] = seq_num+1  # special case for handshake
                                     self.iface_int.send_ip_packet(pkt)
+                                elif unique_id in self.expected_seq and self.expected_seq[unique_id]>=seq_num:
+                                    self.iface_int.send_ip_packet(pkt)
                         else:  ## normal tcp packet, just send
                             self.iface_int.send_ip_packet(pkt)
                     elif matchRes == "deny":
@@ -298,6 +300,8 @@ class Firewall:
                                 isFinSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0])&1
                                 if isSynSet or isFinSet:
                                     self.expected_seq[unique_id] = seq_num+1  # special case for handshake
+                                    self.iface_ext.send_ip_packet(pkt)
+                                elif unique_id in self.expected_seq and self.expected_seq[unique_id]>=seq_num:
                                     self.iface_ext.send_ip_packet(pkt)
                         else:               ## normal tcp packet, just send
                             self.iface_ext.send_ip_packet(pkt)
@@ -478,7 +482,7 @@ class Firewall:
                         else:
                             if pkt_info['external_port'] == int(rule[3]):
                                 return rule[0]
-                    
+
                 elif rule[2]  == 'any':
                     if self.debug:
                         print "rule says that external ip can be anything"
@@ -533,7 +537,7 @@ class Firewall:
                                     return rule[0]
 
         return "pass"
-                                    
+
     def dnsMatching(self, addr, pkt_info):        # make sure the dnsName are all in lower case
         addr_lst = addr.split(".")
         for j in range(1,len(self.rules)+1):
@@ -760,11 +764,3 @@ class Firewall:
             print "string to write", write_str
         f.write(write_str)
         f.flush()
-
-
-
-
-
-
-
-
