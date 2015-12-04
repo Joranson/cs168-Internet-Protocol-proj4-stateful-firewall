@@ -706,10 +706,7 @@ class Firewall:
         2) from crlf, go backwards to parse information
         Be careful about the cases that some of the fields do not exist, need default value (content-length) or alternative (IPv4)
         """
-        header = payload.split(self.crlf)[0]
-        http_string = ""
-        for char in header:
-            http_string += struct.unpack('!B', char)
+        http_string = payload.split(self.crlf)[0]
         result_dict = {}
         http_string = http_string.lower()
         if is_request_http:
