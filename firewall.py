@@ -235,12 +235,11 @@ class Firewall:
                                 else:
                                     pass                # drop forward out-of-order http packet
                             else:   ## zero payload length
-                                if unique_id not in self.expected_seq:
-                                    isSynSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0]>>1)&1
-                                    isFinSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0])&1
-                                    if isSynSet or isFinSet:
-                                        self.expected_seq[unique_id] = seq_num+1  # special case for handshake
-                                        self.iface_int.send_ip_packet(pkt)
+                                isSynSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0]>>1)&1
+                                isFinSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0])&1
+                                if isSynSet or isFinSet:
+                                    self.expected_seq[unique_id] = seq_num+1  # special case for handshake
+                                    self.iface_int.send_ip_packet(pkt)
                         else:  ## normal tcp packet, just send
                             self.iface_int.send_ip_packet(pkt)
                     elif matchRes == "deny":
@@ -293,12 +292,11 @@ class Firewall:
                                 else:
                                     pass                # drop forward out-of-order http packet
                             else:
-                                if unique_id not in self.expected_seq:
-                                    isSynSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0]>>1)&1
-                                    isFinSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0])&1
-                                    if isSynSet or isFinSet:
-                                        self.expected_seq[unique_id] = seq_num+1  # special case for handshake
-                                        self.iface_ext.send_ip_packet(pkt)
+                                isSynSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0]>>1)&1
+                                isFinSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0])&1
+                                if isSynSet or isFinSet:
+                                    self.expected_seq[unique_id] = seq_num+1  # special case for handshake
+                                    self.iface_ext.send_ip_packet(pkt)
                         else:               ## normal tcp packet, just send
                             self.iface_ext.send_ip_packet(pkt)
                     elif matchRes == "deny":
