@@ -432,7 +432,7 @@ class Firewall:
         if start>end:
             return None
         if start == end:
-            mid = self.geoDb[start]
+            mid = self.geoDb[start].split()
             lower, upper = mid[0].split('.'), mid[1].split('.')
             ipIntVal = self.dotQuadToInt(ip)
             if ipIntVal >= self.dotQuadToInt(lower) and ipIntVal <= self.dotQuadToInt(upper):
