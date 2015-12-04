@@ -38,6 +38,13 @@ class Firewall:
                         continue
                     self.rules.append(rule)
 
+        ## in order to pass TCP port 80 pkt when rules are all non-log rules
+        self.ruleContainsLog = False
+        for rule in self.rules:
+            if rule[0]=="log":
+                self.ruleContainsLog = True
+                break
+
         if self.debug:
             for i in self.rules:
                 print i
@@ -203,7 +210,7 @@ class Firewall:
                     if self.debug:
                         print "+++++++++++++++++++incoming packet rule matching result says,", matchRes
                     if matchRes == "pass":
-                        if pkt_info['external_port']==80:    ## handle logging here if external port is 80
+                        if pkt_info['external_port']==80 and self.ruleContainsLog:    ## handle logging here if external port is 80, and there are log rules inside
                             tcp_header_len = (struct.unpack("!B", pkt[ip_header_len+12])[0]>>4) *4  ## tcp header size in Byte
                             ip_total_len = struct.unpack("!H", pkt[2:4])[0]
                             tcp_payload_len = ip_total_len-ip_header_len-tcp_header_len
@@ -244,7 +251,7 @@ class Firewall:
                                     self.iface_int.send_ip_packet(pkt)
                                 elif unique_id in self.expected_seq and self.expected_seq[unique_id]>=seq_num:
                                     self.iface_int.send_ip_packet(pkt)
-                        else:  ## normal tcp packet, just send
+                        else:  ## normal tcp packet or without log rules, just send
                             self.iface_int.send_ip_packet(pkt)
                     elif matchRes == "deny":
                         if self.debug:
@@ -261,7 +268,7 @@ class Firewall:
                     if self.debug:
                         print "+++++++++++++++++++outgoing packet rule matching result says,", matchRes
                     if matchRes == "pass":
-                        if pkt_info['external_port']==80:    ## handle logging here if external port is 80
+                        if pkt_info['external_port']==80 and self.ruleContainsLog:    ## handle logging here if external port is 80
                             tcp_header_len = (struct.unpack("!B", pkt[ip_header_len+12])[0]>>4) *4  ## tcp header size in Byte
                             ip_total_len = struct.unpack("!H", pkt[2:4])[0]
                             # if ip_total_len>ip_header_len+tcp_header_len:  ## there is payload related to TCP connection, which means there is http texts inside
