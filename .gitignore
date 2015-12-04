@@ -4,4 +4,5 @@ ok
 ok-tools/
 .ok_messages
 .rules.conf
+http.log
 .ok_refresh

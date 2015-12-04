@@ -29,7 +29,7 @@ class Firewall:
             if len(rule)<3:
                 continue
             if rule[0]=="deny" or rule[0]=="log":
-                if rule[1]=="dns" and len(rule)==3:
+                if (rule[1]=="dns" and len(rule)==3) or (rule[1]=="http" and len(rule)==3):
                     if "*" not in rule[2] or ("*" in rule[2] and rule[2][0]=="*"):
                         rule[2] = rule[2].lower()  # covert all domain names into lower case
                         self.rules.append(rule)
@@ -671,7 +671,7 @@ class Firewall:
                         for i in range(1,len(logRule)+1):
                             if logAddr_lst[-i]=="*":
                                 break
-                            elif logRule[-i]!=addr_lst[-i]:
+                            elif logAddr_lst[-i]!=addr_lst[-i]:
                                 matched = False
                                 break
                         if matched:
@@ -719,26 +719,30 @@ class Firewall:
                     break
             if "host" not in result_dict:
                 # convert dot quad lst into string
-                result_dict["host"] = ".".join([str(_) for _ in external_ip])
+                result_dict["host"] = self.dotQuadToInt(external_ip)
         else:
             response_info_lst = http_string.split('\r\n');
             # first info is always version, status_code, description
-            result_dict["status_cod"] = response_info_lst[0].split()[1]
+            result_dict["status_code"] = response_info_lst[0].split()[1]
             for i in range(1, len(response_info_lst)):
                 info_elem = response_info_lst[i].split()
                 if info_elem[0]=="content-length:":
-                    result_dict["object-size"] = info_elem[1]
+                    result_dict["object_size"] = info_elem[1]
                     break
-            if "object-size" not in result_dict:
+            if "object_size" not in result_dict:
                 # default object-size to -1 if no content-length exists
-                result_dict["object-size"] = "-1"
+                result_dict["object_size"] = "-1"
         return result_dict
 
     def log(self, requestInfo, responseInfo):
         # info is a dictionary with all logging info pairs
         f = open('http.log', 'a')
-
-        write_str = requestInfo["host"]+" "+requestInfo["method"]+" "+requestInfo["path"]+" "+requestInfo["version"]+" "+responseInfo["status_code"]+" "+responseInfo["object_size"]+"\n"
+        if type(requestInfo["host"])==str:
+            host_to_str = requestInfo["host"]
+        else:
+            external_ip = self.intToDotQuad(requestInfo["host"])
+            host_to_str = ".".join([str(_) for _ in external_ip])
+        write_str = host_to_str+" "+requestInfo["method"].upper()+" "+requestInfo["path"]+" "+requestInfo["version"].upper()+" "+responseInfo["status_code"]+" "+responseInfo["object_size"]+"\n"
         print "string to write", write_str
         f.write(write_str)
         f.flush()
