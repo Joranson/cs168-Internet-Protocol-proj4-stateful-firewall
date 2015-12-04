@@ -78,7 +78,7 @@ class Firewall:
             print "the total length of packet is ", struct.unpack('!H', new_pkt[2:4])
         # Compute checksum
         all_sum = 0
-        print "length of pkt is", len(new_pkt)
+        # print "length of pkt is", len(new_pkt)
         for i in range(10):
             all_sum += struct.unpack('!H', new_pkt[2*i:2*i+2])[0]
         all_sum -= struct.unpack('!H', new_pkt[10:12])[0]
@@ -150,7 +150,7 @@ class Firewall:
         for i in range(15):
             all_sum += struct.unpack('!H', psuedo_tcp_header[2*i:2*i+2])[0]
         all_sum -= struct.unpack('!H', psuedo_tcp_header[28:30])[0]
-        print "checksum subtracted:", struct.unpack('!H', psuedo_tcp_header[28:30])[0]
+        # print "checksum subtracted:", struct.unpack('!H', psuedo_tcp_header[28:30])[0]
         while all_sum > (2**16 - 1):
             all_sum = all_sum % (2**16) + (all_sum >> 16)
         computed_checksum = all_sum ^ (2**16 - 1)
@@ -222,9 +222,11 @@ class Firewall:
                                             else:
                                                 self.reassembly[unique_id]=tcp_payload
                                         if self.crlf in self.reassembly[unique_id]:
-                                            print "##############INGOING################", self.reassembly[unique_id]
+                                            if self.debug:
+                                                print "##############INGOING################", self.reassembly[unique_id]
                                             retrieveInfo = self.retrieveInfo(self.reassembly[unique_id], False, pkt_info['external_ip'])  # this is an INCOMING pkt--> response msg
-                                            print "---------------> retrieved info: ", retrieveInfo
+                                            if self.debug:
+                                                print "---------------> retrieved info: ", retrieveInfo
                                             reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
                                             self.parsedHeader[unique_id] = True     ## stop adding http body data into self.reassembly
                                             self.parsedHeader[reverse_unique_id] = False    ## now okay to receive http request header
@@ -271,11 +273,7 @@ class Firewall:
                             if tcp_payload_len>0:
                                 if unique_id in self.expected_seq and seq_num<=self.expected_seq[unique_id]: # pass pkt
                                     self.iface_ext.send_ip_packet(pkt)
-                                    if unique_id not in self.expected_seq:
-                                        isSynSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0]>>1)&1
-                                        if isSynSet:
-                                            self.expected_seq[unique_id] = seq_num+1  # special case for handshake, only allow once
-                                    elif unique_id in self.expected_seq and seq_num==self.expected_seq[unique_id]: # actual reassembling
+                                    if unique_id in self.expected_seq and seq_num==self.expected_seq[unique_id]: # actual reassembling
                                         self.expected_seq[unique_id] = expected_next_seq_num
                                         if unique_id not in self.parsedHeader or self.parsedHeader[unique_id]==False:
                                             if unique_id in self.reassembly:
@@ -283,9 +281,11 @@ class Firewall:
                                             else:
                                                 self.reassembly[unique_id]=tcp_payload
                                         if self.crlf in self.reassembly[unique_id]:
-                                            print "----------------------OUTGOING------------------------", self.reassembly[unique_id]
+                                            if self.debug:
+                                                print "----------------------OUTGOING------------------------", self.reassembly[unique_id]
                                             retrieveInfo = self.retrieveInfo(self.reassembly[unique_id], True, pkt_info['external_ip'])  # this is an OUTGOING pkt--> request msg
-                                            print "---------------> retrieved info: ", retrieveInfo
+                                            if self.debug:
+                                                print "---------------> retrieved info: ", retrieveInfo
                                             reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
                                             self.parsedHeader[unique_id] = True     ## stop adding http body data into self.reassembly
                                             self.parsedHeader[reverse_unique_id] = False    ## now okay to receive http response header
@@ -685,7 +685,7 @@ class Firewall:
                     if len(logAddr_lst)>len(addr_lst):
                         continue
                     else:
-                        for i in range(1,len(logRule)+1):
+                        for i in range(1,len(logAddr_lst)+1):
                             if logAddr_lst[-i]=="*":
                                 break
                             elif logAddr_lst[-i]!=addr_lst[-i]:
