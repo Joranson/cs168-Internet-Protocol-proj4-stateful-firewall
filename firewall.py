@@ -656,46 +656,45 @@ class Firewall:
         return dnsName.lower(), j
 
     def hostMatching(self, retrieveInfo):
-        return True
-        # if type(retrieveInfo["host"])==str: ## actual hostname matching, can use domainMatching(domainName)
-        #     hostname = retrieveInfo["host"]
-        #     addr_lst = hostname.split(".")
-        #     for j in range(1,len(self.rules)+1):
-        #         rule = self.rules[-j]
-        #         if rule[0]=="log":
-        #             logRule = rule
-        #             logAddr_lst = logRule[2].split(".")
-        #             matched = True
-        #             if len(logAddr_lst)>len(addr_lst):
-        #                 continue
-        #             else:
-        #                 for i in range(1,len(logRule)+1):
-        #                     if logAddr_lst[-i]=="*":
-        #                         break
-        #                     elif logRule[-i]!=addr_lst[-i]:
-        #                         matched = False
-        #                         break
-        #                 if matched:
-        #                     return True
-        #     return False
-        # else:                               ## IPv4 matching, TODO: remeber to convert IPv4 dot quad into integer first inside retrieveInfo
-        #     ipv4_int = retrieveInfo["host"]
-        #     for j in range(1,len(self.rules)+1):
-        #         rule = self.rules[-j]
-        #         if rule[0]=="log":
-        #             isIPv4 = True
-        #             logAddr_lst = rule[2].split(".")
-        #             for i in logAddr_lst:
-        #                 if not i.isdigit():
-        #                     isIPv4 = False
-        #                     break
-        #             if rule[0]=="log" and isIPv4:
-        #                 rule_int = self.dotQuadToInt(rule[2])
-        #                 if ipv4_int!=rule_int:
-        #                     continue
-        #                 else:
-        #                     return True
-        #     return False
+        if type(retrieveInfo["host"])==str: ## actual hostname matching, can use domainMatching(domainName)
+            hostname = retrieveInfo["host"]
+            addr_lst = hostname.split(".")
+            for j in range(1,len(self.rules)+1):
+                rule = self.rules[-j]
+                if rule[0]=="log":
+                    logRule = rule
+                    logAddr_lst = logRule[2].split(".")
+                    matched = True
+                    if len(logAddr_lst)>len(addr_lst):
+                        continue
+                    else:
+                        for i in range(1,len(logRule)+1):
+                            if logAddr_lst[-i]=="*":
+                                break
+                            elif logRule[-i]!=addr_lst[-i]:
+                                matched = False
+                                break
+                        if matched:
+                            return True
+            return False
+        else:                               ## IPv4 matching, TODO: remeber to convert IPv4 dot quad into integer first inside retrieveInfo
+            ipv4_int = retrieveInfo["host"]
+            for j in range(1,len(self.rules)+1):
+                rule = self.rules[-j]
+                if rule[0]=="log":
+                    isIPv4 = True
+                    logAddr_lst = rule[2].split(".")
+                    for i in logAddr_lst:
+                        if not i.isdigit():
+                            isIPv4 = False
+                            break
+                    if rule[0]=="log" and isIPv4:
+                        rule_int = self.dotQuadToInt(rule[2])
+                        if ipv4_int!=rule_int:
+                            continue
+                        else:
+                            return True
+            return False
 
     def retrieveInfo(self, payload, is_request_http, external_ip): ## TODO: implement this
         """
@@ -737,22 +736,13 @@ class Firewall:
 
     def log(self, requestInfo, responseInfo):
         # info is a dictionary with all logging info pairs
-#         f = open('http.log', 'a')
-#
-#         write_str = info["host"]+" "+info["method"]+" "+info["path"]+" "+info["version"]+" "+info["status_code"]+" "+info["object_s\
-# ize"]+"\n"
-#         print "string to write", write_str
-#         f.write(write_str)
-        pass
-#
-#     def log(self, request_info, response_info):
-#         # info is a dictionary with all logging info pairs
-#         f = open('http.log', 'a')
-#
-#         write_str = request_info["host"]+" "+request_info["method"]+" "+request_info["path"]+" "+request_info["version"]+" "+response_info["status_code"]+" "+response_info["object_size"]+"\n"
-#         print "string to write", write_str
-#         f.write(write_str)
-# >>>>>>> d9f47d6465d8c23a373258bfe0a71837c8d3506e
+        f = open('http.log', 'a')
+
+        write_str = requestInfo["host"]+" "+requestInfo["method"]+" "+requestInfo["path"]+" "+requestInfo["version"]+" "+responseInfo["status_code"]+" "+responseInfo["object_size"]+"\n"
+        print "string to write", write_str
+        f.write(write_str)
+        f.flush()
+
 
 
 
