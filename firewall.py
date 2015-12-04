@@ -290,6 +290,8 @@ class Firewall:
                                             self.http_request_info[unique_id] = retrieveInfo
                                             self.reassembly[unique_id] = ""   # reset to empty string for next http header
                                 else:
+                                    if self.debug:
+                                        print "drop forward packet. Sequence number:", seq_num
                                     pass                # drop forward out-of-order http packet
                             else:
                                 isSynSet = (struct.unpack("!B", pkt[ip_header_len+13:ip_header_len+14])[0]>>1)&1
@@ -436,15 +438,17 @@ class Firewall:
             if ipIntVal >= self.dotQuadToInt(lower) and ipIntVal <= self.dotQuadToInt(upper):
                 return mid[2]
             return None
-        mid = self.geoDb[(start+end)/2]
+        mid = self.geoDb[(start+end)/2].split()
         lower, upper = mid[0].split('.'), mid[1].split('.')
         ipIntVal = self.dotQuadToInt(ip)
         if ipIntVal < self.dotQuadToInt(lower):
             return self.findCtry(ip, start, (start+end)/2-1)
         elif ipIntVal > self.dotQuadToInt(upper):
             if self.debug:
-                print "ipIntVal is greater than upper:", start, "and", end
+                print "ipIntVal", self.intToDotQuad(ipIntVal), " is greater than upper:", upper, "and index from", start, "and", end
             return self.findCtry(ip, (start+end)/2+1, end)
+        if self.debug:
+            print "in range", mid
         return mid[2]
 
 
@@ -752,7 +756,8 @@ class Firewall:
             external_ip = self.intToDotQuad(requestInfo["host"])
             host_to_str = ".".join([str(_) for _ in external_ip])
         write_str = host_to_str+" "+requestInfo["method"].upper()+" "+requestInfo["path"]+" "+requestInfo["version"].upper()+" "+responseInfo["status_code"]+" "+responseInfo["object_size"]+"\n"
-        print "string to write", write_str
+        if self.debug:
+            print "string to write", write_str
         f.write(write_str)
         f.flush()
 
