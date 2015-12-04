@@ -227,7 +227,8 @@ class Firewall:
                                             self.reassembly[unique_id]=tcp_payload
                                     if self.crlf in self.reassembly[unique_id]:
                                         print "##############INGOING################", self.reassembly[unique_id]
-                                        retrieveInfo = self.retrieveInfo(self.reassembly[unique_id], False)  # this is an INCOMING pkt--> response msg
+                                        retrieveInfo = self.retrieveInfo(self.reassembly[unique_id], False, pkt_info['external_ip'])  # this is an INCOMING pkt--> response msg
+                                        print "---------------> retrieved info: ", retrieveInfo
                                         reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
                                         self.parsedHeader[unique_id] = True     ## stop adding http body data into self.reassembly
                                         self.parsedHeader[reverse_unique_id] = False    ## now okay to receive http request header
@@ -277,8 +278,9 @@ class Firewall:
                                         else:
                                             self.reassembly[unique_id]=tcp_payload
                                     if self.crlf in self.reassembly[unique_id]:
-                                        print "&&&&&&&&&&&&&&&&&&&&&&&&OUTGOING&&&&&&&&&&&&&&&&&&&&&&&&", self.reassembly[unique_id]
-                                        retrieveInfo = self.retrieveInfo(self.reassembly[unique_id], True)  # this is an OUTGOING pkt--> request msg
+                                        print "----------------------OUTGOING------------------------", self.reassembly[unique_id]
+                                        retrieveInfo = self.retrieveInfo(self.reassembly[unique_id], True, pkt_info['external_ip'])  # this is an OUTGOING pkt--> request msg
+                                        print "---------------> retrieved info: ", retrieveInfo
                                         reverse_unique_id = (unique_id[1],unique_id[0], unique_id[3], unique_id[2])
                                         self.parsedHeader[unique_id] = True     ## stop adding http body data into self.reassembly
                                         self.parsedHeader[reverse_unique_id] = False    ## now okay to receive http response header
@@ -704,27 +706,37 @@ class Firewall:
         2) from crlf, go backwards to parse information
         Be careful about the cases that some of the fields do not exist, need default value (content-length) or alternative (IPv4)
         """
-        # http_string = ""
-        # for i in payload:
-        #     http_string += struct.unpack('!B', i)
-        #
-        # result_dict = {}
-        # if is_request_http:
-        #     # set req_str to the http part using crlf
-        #     req_str = "\r\n"
-        #     host = re.findall(r"Host: (?P<value>.*?)\r\n", req_str)
-        #     result_dict["host"] = (host and host[0].rstrip())  or external_ip
-        #     result_dict["method"] = req_str.split()[0]
-        #     result_dict["path"] = req_str.split()[1]
-        #     result_dict["version"] = req_str.split()[2]
-        # else:
-        #     res_str = "\r\n"
-        #     result_dict["status_code"] = res_str.split()[1]
-        #     obj_size = re.findall(r"Content-Length: (?P<value>.*?)\r\n", res_str)
-        #     result_dict["object_size"] = (obj_size and obj_size[0].rstrip()) or "-1"
-        #
-        # return result_dict
-        pass
+        header = payload.split(self.crlf)[0]
+        http_string = ""
+        for char in header:
+            http_string += struct.unpack('!B', char)
+        result_dict = {}
+        http_string = http_string.lower()
+        if is_request_http:
+            request_info_lst = http_string.split('\r\n');
+            # first info is always method, path, version
+            result_dict["method"], result_dict["path"], result_dict["version"] = request_info_lst[0].split()
+            for i in range(1, len(request_info_lst)):
+                info_elem = request_info_lst[i].split()
+                if info_elem[0]=="host:":
+                    result_dict["host"] = info_elem[1]
+                    break
+            if "host" not in result_dict:
+                # convert dot quad lst into string
+                result_dict["host"] = ".".join([str(_) for _ in external_ip])
+        else:
+            response_info_lst = http_string.split('\r\n');
+            # first info is always version, status_code, description
+            result_dict["status_cod"] = response_info_lst[0].split()[1]
+            for i in range(1, len(response_info_lst)):
+                info_elem = response_info_lst[i].split()
+                if info_elem[0]=="content-length:":
+                    result_dict["object-size"] = info_elem[1]
+                    break
+            if "object-size" not in result_dict:
+                # default object-size to -1 if no content-length exists
+                result_dict["object-size"] = "-1"
+        return result_dict
 
     def log(self, requestInfo, responseInfo):
         # info is a dictionary with all logging info pairs
